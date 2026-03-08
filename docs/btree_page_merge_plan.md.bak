@@ -1,0 +1,1512 @@
+# B-Tree Page Merge — Implementation Plan
+
+> **GSoC 2026 — B-tree Index Bloat Reduction (Page Merge)**
+>
+> A detailed design document for implementing leaf-level page merging in
+> PostgreSQL B-tree indexes.  Incorporates mentor feedback from Kirk Wolak.
+>
+> The merge moves data from a left leaf page (source) into its right sibling
+> (destination) and then deletes the source page — reusing the same
+> parent-pivot and sibling-link surgery that `_bt_pagedel()` already does.
+> Key space always moves right, matching PostgreSQL's existing concurrency
+> protocol (`_bt_moveright()`, `P_IGNORE` handling).  Both pages must share
+> the same parent (README line 273).  A new user-facing command drives the
+> operation; VACUUM's only role is to recycle the deleted tombstone pages.
+
+---
+
+## Table of Contents
+
+1.  [Problem Statement](#1-problem-statement)
+2.  [Design Philosophy](#2-design-philosophy)
+3.  [Merge Direction: Always L → R](#3-merge-direction-always-l--r)
+4.  [Merge Candidate Identification & GUC Thresholds](#4-merge-candidate-identification--guc-thresholds)
+5.  [The Merge Algorithm](#5-the-merge-algorithm)
+6.  [Locking Protocol](#6-locking-protocol)
+7.  [High Key & Pivot Tuple Invariants](#7-high-key--pivot-tuple-invariants)
+8.  [Source Page Deletion — Why We Must Delete Immediately](#8-source-page-deletion--why-we-must-delete-immediately)
+9.  [WAL Logging](#9-wal-logging)
+10. [Crash Recovery (REDO)](#10-crash-recovery-redo)
+11. [Concurrency: How Concurrent Scans See the Merge](#11-concurrency-how-concurrent-scans-see-the-merge)
+12. [The New Command](#12-the-new-command)
+13. [Edge Cases & Restrictions](#13-edge-cases--restrictions)
+14. [Reusable Code Inventory](#14-reusable-code-inventory)
+15. [Testing Strategy](#15-testing-strategy)
+16. [Files to Modify](#16-files-to-modify)
+17. [Implementation Phases](#17-implementation-phases)
+
+---
+
+## 1. Problem Statement
+
+B-tree indexes become **bloated** after heavy UPDATE/DELETE workloads.  VACUUM
+removes dead tuples and deletes completely empty pages, but it does NOT merge
+*partially-filled* pages.  A table that has had 80% of its rows deleted can
+have an index where every leaf page is only 10–20% full — 4–5× larger than
+necessary.
+
+```
+ After heavy DELETE cycles:
+ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐
+ │██    │ │█     │ │███   │ │█     │ │██    │ │█     │ │██    │ │█     │
+ │      │ │      │ │      │ │      │ │      │ │      │ │      │ │      │
+ └──────┘ └──────┘ └──────┘ └──────┘ └──────┘ └──────┘ └──────┘ └──────┘
+ Each page: 5–20% full.  Total: 8 pages.  Useful data fits in 2–3 pages.
+
+ After iterative pairwise merges (small page merged into large sibling):
+ ┌──────┐ ┌──────┐ ┌──────┐
+ │██████│ │█████ │ │████  │   Pages freed: 5 out of 8
+ │██    │ │██    │ │      │   Fill: 50–70%
+ └──────┘ └──────┘ └──────┘
+```
+
+### Why This Matters
+
+| Solution               | Lock Level                              | Downtime      | Extra Space  |
+|-------------------------|-----------------------------------------|---------------|--------------|
+| `REINDEX`               | `AccessExclusiveLock`                   | Minutes–hours | In-place     |
+| `REINDEX CONCURRENTLY`  | `ShareUpdateExclusiveLock`              | Very long     | **2× index** |
+| `pg_repack`             | External tool                           | Long          | **2× disk**  |
+| **Page Merge (this)**   | Cleanup lock src+dst, `BT_WRITE` parent | **None**      | **None**     |
+
+---
+
+## 2. Design Philosophy
+
+### What We DO
+
+1. **Detect** a bloated leaf page whose right same-parent sibling can
+   absorb its data.
+2. **Merge** the left page's (source) data into the right sibling
+   (destination).
+3. **Update the parent** — redirect the source page's downlink and remove
+   the redundant pivot entry, identical to `_bt_mark_page_halfdead()`.
+4. **Delete the source page** — mark it `BTP_HALF_DEAD`, then unlink it
+   from the sibling chain via `_bt_unlink_halfdead_page()`.
+5. **Leave the tombstone** for VACUUM to recycle via `BTPageIsRecyclable()`
+   when the `safexid` ages out.
+
+### What We DON'T Do
+
+- ❌ We do NOT merge internal (non-leaf) pages — leaf only.
+- ❌ We do NOT merge the rightmost page on a level — same restriction
+  as `_bt_pagedel()`.
+- ❌ We do NOT merge pages that belong to different parents — README
+  line 273 forbids cross-parent key-space movement.
+- ❌ We do NOT invent new concurrency protocols — we reuse the existing
+  `P_IGNORE` / `safexid` / drain technique that page deletion already uses.
+- ❌ We do NOT couple with VACUUM — VACUUM only recycles the tombstone
+  pages we leave behind.  There is zero dependency between our new command
+  and VACUUM's scan logic.
+
+### Why We MUST Delete the Source Page Immediately
+
+If the source page were left empty but "live" (parent downlink and high key
+intact), inserts with keys in its range would descend to it via
+`_bt_findinsertloc()` (nbtinsert.c:886) and re-fill it before VACUUM could
+delete it.  **Net result: zero bloat reduction.**
+
+By atomically removing the source page's parent downlink and marking it
+`BTP_HALF_DEAD`, inserts can never reach it again.  The parent directs all
+keys in the source page's former range to the destination page.  This is
+the same mechanism `_bt_pagedel()` already uses.
+
+---
+
+## 3. Merge Direction: Always L → R
+
+### Why Only L → R
+
+PostgreSQL's B-tree concurrency protocol is built around a single
+invariant: **key space only ever moves right**.  Every mechanism relies
+on this:
+
+- **`_bt_moveright()`** (nbtsearch.c:302): when a reader descends to a
+  page and finds it `P_IGNORE` (half-dead/deleted) or its key has moved
+  past the high key (page split), it moves **right** via `btpo_next`.
+  There is no corresponding "move left" recovery path.
+
+- **Page deletion** (`_bt_mark_page_halfdead()`, nbtpage.c:2218):
+  overwrites the deleted page's parent downlink with the **right
+  sibling's** block number.  Key space transfers right.
+
+- **The README** (line 237) explicitly acknowledges:
+  > "Merging partly-full pages would allow better space reuse, but it
+  > seems impractical to move existing data items left or right to make
+  > this happen — **a scan moving in the opposite direction might miss
+  > the items if so.**"
+
+If we merged R → L (key space moves left), a concurrent reader that
+descended to R via a stale parent downlink would find R marked
+`P_IGNORE` and move **right** — away from the data, which is now in L
+(to the left).  The reader would miss tuples.  **This is a correctness
+violation.**
+
+The same-parent constraint (README line 273) prevents cascading
+parent-of-parent updates, but it does NOT fix this concurrency problem.
+The issue is at the leaf level: `_bt_moveright()` only moves right.
+
+Therefore: **source is always L, destination is always R, key space
+moves right.**  This is identical to what `_bt_pagedel()` does.
+
+### The Merge Operation
+
+L is the source.  R is the destination.  During the page rebuild, R's
+high key is written at offset `P_HIKEY` on the rebuilt destination page
+via `PageAddItem()`.  Since all of L's keys are < R's high key (sibling
+ordering invariant), the invariant holds.
+
+```
+ L.high_key = 20    L has keys: [5, 10, 15]     (all ≤ 20)
+ R.high_key = 40    R has keys: [25, 30]         (all ≤ 40)
+
+ Rebuilt R: high_key = 40, keys = [5, 10, 15, 25, 30]  (all ≤ 40 ✓)
+ L is deleted.
+```
+
+Parent update: overwrite L's downlink to point to R, delete R's pivot
+entry — identical to `_bt_mark_page_halfdead()` (nbtpage.c:2218–2226).
+Key space moves right.
+
+```
+ Parent before:  [(-∞)→L]  [(20)→R]  [(40)→S]
+ Parent after:   [(-∞)→R]  [(40)→S]
+ R now owns (-∞, 40]. ✓
+```
+
+### Consequence: We Can Only Merge When L Is Below Threshold
+
+Since direction is fixed (L → R), we can only merge a pair when **L**
+(the left page) is a merge candidate (below the low fill threshold).
+If R is bloated but L is not, we skip this pair — R may be mergeable as
+the L of the *next* pair (R, R's right sibling).
+
+The scan strategy (Section 12) naturally handles this: we scan
+left-to-right, and for each candidate page P, we check whether P's right
+sibling can absorb P's data.
+
+### Same-Parent Constraint
+
+L and R must be children of the same parent.  We validate this after
+locking the parent by checking that both downlinks exist on the same
+parent page (see Section 6).  If they don't, we abort the merge.
+
+The nbtree README (line 273) is explicit:
+
+> "To preserve consistency on the parent level, we cannot merge the key
+> space of a page into its right sibling unless the right sibling is a
+> child of the same parent — otherwise, the parent's key space assignment
+> changes too, meaning we'd have to make bounding-key updates in its
+> parent, and perhaps all the way up the tree."
+
+---
+
+## 4. Merge Candidate Identification & GUC Thresholds
+
+### GUC Parameters (Per Kirk's Guidance)
+
+Kirk was explicit: thresholds must be **GUCs** so we can test with various
+settings and let users control aggressiveness.
+
+```c
+/* New GUC: minimum fill percentage to trigger a merge */
+int  btree_merge_low_threshold = 10;    /* default: 10% fill */
+/* "I would be okay only merging pages that are 1% or less" — Kirk */
+
+/* New GUC: maximum fill percentage after merge (don't overfill) */
+int  btree_merge_high_threshold = 70;   /* default: 70% fill */
+/* "Not merging past 70%" — Kirk */
+/* Prevents creating pages that will immediately split on insert */
+```
+
+### Why These Specific Defaults
+
+- **Low threshold (10%):** Only pages that are severely bloated are
+  candidates.  A page at 10% fill has had ~90% of its tuples deleted.
+  This is conservative and avoids unnecessary churn.
+
+- **High threshold (70%):** The default `fillfactor` for B-tree indexes is
+  90%.  Merging up to 70% leaves ~20% headroom for inserts before a split
+  is needed.  Avoids merge → immediate split → merge cycles.
+
+### GUC Definition (in `src/backend/utils/misc/guc_tables.c`)
+
+```c
+{
+    {"btree_merge_low_threshold", PGC_USERSET, INDEX_SETTINGS,
+        gettext_noop("Minimum fill percentage below which a leaf page "
+                     "is considered a merge candidate."),
+        NULL,
+        GUC_UNIT_PERCENT
+    },
+    &btree_merge_low_threshold,
+    10, 0, 50,    /* default=10, min=0, max=50 */
+    NULL, NULL, NULL
+},
+{
+    {"btree_merge_high_threshold", PGC_USERSET, INDEX_SETTINGS,
+        gettext_noop("Maximum fill percentage of the destination page "
+                     "after merging."),
+        NULL,
+        GUC_UNIT_PERCENT
+    },
+    &btree_merge_high_threshold,
+    70, 30, 100,  /* default=70, min=30, max=100 */
+    NULL, NULL, NULL
+},
+```
+
+### Candidate Detection Functions
+
+```c
+/*
+ * _bt_is_merge_candidate -- check if a leaf page is below the low threshold.
+ *
+ * Returns true if the page's fill percentage is at or below
+ * btree_merge_low_threshold.  Called during the leaf-page scan to decide
+ * whether to attempt a merge for this page.
+ */
+static bool
+_bt_is_merge_candidate(Page page)
+{
+    Size    freespace = PageGetFreeSpace(page);
+    Size    pagesize  = PageGetPageSize(page);
+    int     fill_pct  = 100 - (int)(freespace * 100 / pagesize);
+
+    return (fill_pct <= btree_merge_low_threshold);
+}
+
+/*
+ * _bt_can_merge_into -- check if the destination page can absorb the
+ *                       source page's data without exceeding the high
+ *                       threshold.
+ *
+ * Returns true if (a) all of source's data tuples physically fit in
+ * destination's free space, and (b) the resulting fill percentage does
+ * not exceed btree_merge_high_threshold.
+ */
+static bool
+_bt_can_merge_into(Page srcpage, Page dstpage)
+{
+    Size    dstfree    = PageGetFreeSpace(dstpage);
+    Size    dstpagesize = PageGetPageSize(dstpage);
+    BTPageOpaque sopaque = BTPageGetOpaque(srcpage);
+    OffsetNumber minoff = P_FIRSTDATAKEY(sopaque);
+    OffsetNumber maxoff = PageGetMaxOffsetNumber(srcpage);
+    Size    srcdata = 0;
+
+    for (OffsetNumber off = minoff; off <= maxoff; off++)
+    {
+        ItemId iid = PageGetItemId(srcpage, off);
+        srcdata += MAXALIGN(ItemIdGetLength(iid)) + sizeof(ItemIdData);
+    }
+
+    if (dstfree < srcdata)
+        return false;   /* doesn't physically fit */
+
+    Size after_free = dstfree - srcdata;
+    int  after_fill = 100 - (int)(after_free * 100 / dstpagesize);
+
+    return (after_fill <= btree_merge_high_threshold);
+}
+```
+
+---
+
+## 5. The Merge Algorithm
+
+### Overview
+
+```
+ BEFORE (L is source, R is destination):
+ ┌─────────────┐    ┌─────────────┐
+ │ Page L      │ →  │ Page R      │ → ...
+ │ hi_key = 20 │    │ hi_key = 40 │
+ │ [5, 10, 15] │    │ [25, 30]    │
+ │ fill: 8%    │    │ fill: 35%   │
+ └─────────────┘    └─────────────┘
+
+           Parent: [(-∞)→L]  [(20)→R]  [(40)→S]
+
+ AFTER:
+                    ┌──────────────────┐
+                    │ Page R           │ → ...
+                    │ hi_key = 40      │
+                    │ [5,10,15,25,30]  │
+                    │ fill: 43%        │
+                    └──────────────────┘
+
+           Parent: [(-∞)→R]  [(40)→S]
+
+ L is BTP_HALF_DEAD → then BTP_DELETED with safexid.
+ Key space moved right — matching the existing concurrency protocol.
+ Tombstone stays until safexid ages out.  VACUUM recycles it.
+```
+
+### Step by Step
+
+Source is always L (left), destination is always R (right).  Key space
+moves right, identical to `_bt_pagedel()`.  Locks are acquired
+left-to-right.
+
+```
+ Phase 1: Merge + Delete Source
+ ═════════════════════════════
+
+ Step 0 — Build search stack
+   Build a search stack to L (the source page) via _bt_search()
+   (nbtsearch.c:99).  This gives us a path from the root to L's
+   parent.  Same technique _bt_pagedel() uses.  Release the leaf
+   buffer returned by _bt_search() — we re-acquire it ourselves
+   with a cleanup lock.
+
+ Step 1 — Lock LEFT page with cleanup lock
+   lbuf = ReadBuffer(rel, lblkno)
+   LockBufferForCleanup(lbuf)        /* bufmgr.c — waits for all pins */
+   Validate L:
+     - P_ISLEAF(lopaque)             — leaf pages only
+     - !P_IGNORE(lopaque)            — not deleted or half-dead
+     - !P_INCOMPLETE_SPLIT(lopaque)  — no pending split
+     - !_bt_leftsib_splitflag(rel, lopaque->btpo_prev, lblkno)
+       (nbtpage.c — same check _bt_pagedel() does)
+   If any check fails → _bt_relbuf(rel, lbuf), _bt_freestack(stack), return.
+
+ Step 2 — Lock RIGHT page with cleanup lock
+   rblkno = lopaque->btpo_next
+   rbuf = ReadBuffer(rel, rblkno)
+   LockBufferForCleanup(rbuf)        /* left-to-right ordering — no deadlock */
+   Validate R:
+     - P_ISLEAF(ropaque)
+     - !P_IGNORE(ropaque)
+     - ropaque->btpo_prev == lblkno  — still siblings
+     - !_bt_rightsib_halfdeadflag(rel, ropaque->btpo_next)
+       (nbtpage.c — same check _bt_pagedel() does)
+   Source is always L, destination is always R.
+   Validate: _bt_can_merge_into(lpage, rpage)
+   If any check fails → release both, free stack, return.
+
+ Step 3 — Build merged page in temp buffer
+   Use a PGAlignedBlock (same as _bt_split() in nbtinsert.c:1542):
+     PGAlignedBlock merged_buf;
+     Page merged_page = merged_buf.data;
+     _bt_pageinit(merged_page, BLCKSZ);           /* nbtpage.c:1107 */
+
+   Copy destination's opaque data (flags, level, sibling links).
+   Copy HIGH KEY from R (the destination page).
+   Copy L's data tuples first (lower keys).
+   Copy R's data tuples after (higher keys).
+   Use _bt_pgaddtup() (nbtinsert.c:2626) for each tuple — same loop
+   pattern as _bt_split().
+
+   R's high key is the upper bound for the combined key range.
+
+ Step 4 — Lock parent, validate same-parent
+   Use _bt_lock_subtree_parent() (nbtpage.c:2817) via the saved search
+   stack.  This finds L's downlink at offset l_poffset and returns the
+   parent buffer locked with BT_WRITE.
+
+   CRITICAL — validate L and R share the same parent:
+     r_poffset = OffsetNumberNext(l_poffset)
+     if (BTreeTupleGetDownLink(parent[r_poffset]) != rblkno) → ABORT
+   This is the same cross-check _bt_mark_page_halfdead() performs at
+   nbtpage.c:2182.
+
+ Step 5 — Transfer predicate locks
+   PredicateLockPageCombine(rel, lblkno, rblkno)       /* predicate.c */
+   Same call as _bt_mark_page_halfdead() at nbtpage.c:2201.
+
+ ═══ START_CRIT_SECTION() ═══
+
+ Step 6 — Update parent
+   Redirect L's downlink to point to R:
+     BTreeTupleSetDownLink(parent[l_poffset], rblkno)
+   Delete R's now-redundant pivot entry:
+     PageIndexTupleDelete(parentpage, r_poffset)
+   This is exactly what _bt_mark_page_halfdead() does at
+   nbtpage.c:2218–2226: BTreeTupleSetDownLink() + PageIndexTupleDelete().
+   Key space moves right.
+
+ Step 7 — Replace R's page content
+   memcpy(rpage, merged_page, BLCKSZ)
+
+ Step 8 — Mark L as BTP_HALF_DEAD
+   lopaque->btpo_flags |= BTP_HALF_DEAD
+   Overwrite L's high key with a truncated top-parent link tuple
+   (same as _bt_mark_page_halfdead() at nbtpage.c:2234–2245).
+
+ Step 9 — Mark all three buffers dirty
+   MarkBufferDirty(parentbuf)
+   MarkBufferDirty(rbuf)
+   MarkBufferDirty(lbuf)
+
+ Step 10 — WAL log XLOG_BTREE_MERGE (see Section 9)
+
+ Step 11 — Set LSN on all three pages
+
+ ═══ END_CRIT_SECTION() ═══
+
+ Step 12 — Release parent lock
+   _bt_relbuf(rel, parentbuf)
+
+ Step 13 — Release R lock
+   _bt_relbuf(rel, rbuf)
+
+
+ Phase 2: Unlink Source from Sibling Chain
+ ═════════════════════════════════════════
+
+ Step 14 — Call _bt_unlink_halfdead_page(rel, lbuf, ...)
+   This existing function (nbtpage.c:2316) handles:
+     - Locking neighbors in left-to-right order
+     - Updating sibling links to bypass L
+     - Marking L as BTP_DELETED with safexid =
+       ReadNextFullTransactionId()
+     - WAL logging: XLOG_BTREE_UNLINK_PAGE
+     - L stays as tombstone until safexid ages out (drain technique)
+
+ Step 15 — Done.
+   L is fully deleted.  R has the merged data.
+   Parent is updated.  VACUUM will eventually recycle the source
+   page via BTPageIsRecyclable().
+```
+
+### Sorted Insertion Detail
+
+The merged page must maintain sorted order.  Since L's key range is
+entirely below R's (sibling ordering invariant), we copy L's tuples
+first, then R's.
+
+**Page rebuild pattern** (matches `_bt_dedup_pass()` in nbtdedup.c:59 and
+`_bt_split()` in nbtinsert.c:1542):
+
+```c
+PGAlignedBlock merged_buf;
+Page merged_page = merged_buf.data;
+_bt_pageinit(merged_page, BLCKSZ);
+
+BTPageOpaque mopaque = BTPageGetOpaque(merged_page);
+memcpy(mopaque, BTPageGetOpaque(dstpage), sizeof(BTPageOpaqueData));
+
+/* High key always comes from R (the destination page).
+ * R's high key is the upper bound of the combined key range.
+ */
+if (!P_RIGHTMOST(dopaque))
+{
+    ItemId   hitemid = PageGetItemId(rpage, P_HIKEY);
+    Size     hitemsz = ItemIdGetLength(hitemid);
+    IndexTuple hitem = (IndexTuple) PageGetItem(rpage, hitemid);
+    if (PageAddItem(merged_page, (Item) hitem, hitemsz,
+                    P_HIKEY, false, false) == InvalidOffsetNumber)
+        elog(ERROR, "failed to add high key to merged page");
+}
+
+OffsetNumber afteroff = P_FIRSTDATAKEY(mopaque);
+
+/*
+ * L's keys come first (lower), R's keys come second (higher).
+ * Sorted order is guaranteed by the sibling ordering invariant.
+ */
+/* First: L's data tuples (lower keys) */
+BTPageOpaque lopaque_t = BTPageGetOpaque(lpage);
+for (OffsetNumber off = P_FIRSTDATAKEY(lopaque_t);
+     off <= PageGetMaxOffsetNumber(lpage); off++)
+{
+    ItemId iid = PageGetItemId(lpage, off);
+    IndexTuple itup = (IndexTuple) PageGetItem(lpage, iid);
+    Size itupsz = ItemIdGetLength(iid);
+    if (!_bt_pgaddtup(merged_page, itupsz, itup, afteroff, false))
+        elog(ERROR, "failed to add tuple to merged page");
+    afteroff = OffsetNumberNext(afteroff);
+}
+/* Then: R's data tuples (higher keys) */
+BTPageOpaque ropaque_t = BTPageGetOpaque(rpage);
+for (OffsetNumber off = P_FIRSTDATAKEY(ropaque_t);
+     off <= PageGetMaxOffsetNumber(rpage); off++)
+{
+    ItemId iid = PageGetItemId(rpage, off);
+    IndexTuple itup = (IndexTuple) PageGetItem(rpage, iid);
+    Size itupsz = ItemIdGetLength(iid);
+    if (!_bt_pgaddtup(merged_page, itupsz, itup, afteroff, false))
+        elog(ERROR, "failed to add tuple to merged page");
+    afteroff = OffsetNumberNext(afteroff);
+}
+```
+
+---
+
+## 6. Locking Protocol
+
+### Why Three Locks
+
+The merge modifies three pages atomically: the source page (marked
+half-dead), the destination page (receives data), and the parent page
+(downlink redirected, pivot entry removed).  This is the same number of
+pages `_bt_mark_page_halfdead()` modifies.
+
+### Why Cleanup Locks on Source and Destination
+
+Regular `BT_WRITE` locks prevent concurrent readers from acquiring new
+read locks, but they do NOT wait for readers who already read the page
+and released their lock.  A scanner that read the source page, released
+its read lock, and is about to read the destination page could see
+duplicate data or miss data.
+
+Cleanup locks (`LockBufferForCleanup()` in bufmgr.c:6701) are stronger:
+they block until **no other backend has a pin on the buffer**.  This
+guarantees no scanner is currently reading the source or destination page.
+
+### Lock Ordering
+
+```
+ Step 1: Build search stack via _bt_search()    (no leaf locks held)
+ Step 2: Cleanup lock on LEFT page              (LockBufferForCleanup)
+ Step 3: Cleanup lock on RIGHT page             (LockBufferForCleanup)
+ Step 4: BT_WRITE on parent                     (_bt_lock_subtree_parent)
+
+ Always left-to-right at leaf level, bottom-to-top across levels.
+ This matches PostgreSQL's standard B-tree lock ordering.
+ _bt_mark_page_halfdead() uses exactly this protocol:
+   - Holds lock on leaf (child)
+   - Acquires BT_WRITE on parent via _bt_lock_subtree_parent()
+```
+
+### Same-Parent Validation
+
+After locking the parent via `_bt_lock_subtree_parent()` (nbtpage.c:2817),
+we verify both pages are children of the same parent:
+
+```c
+/* _bt_lock_subtree_parent() found L's downlink at poffset */
+nextoff = OffsetNumberNext(poffset);
+itemid  = PageGetItemId(parentpage, nextoff);
+itup    = (IndexTuple) PageGetItem(parentpage, itemid);
+if (BTreeTupleGetDownLink(itup) != rblkno)
+{
+    /* L and R have different parents — abort merge */
+    _bt_relbuf(rel, parentbuf);
+    _bt_relbuf(rel, rbuf);
+    _bt_relbuf(rel, lbuf);
+    _bt_freestack(stack);
+    return false;
+}
+```
+
+This is the same cross-check `_bt_mark_page_halfdead()` performs at
+nbtpage.c:2182.
+
+### Deadlock Safety
+
+The search stack is built BEFORE locking any leaf page.  The stack
+provides an approximate parent pointer.  `_bt_lock_subtree_parent()` /
+`_bt_getstackbuf()` (nbtinsert.c:2335) walk right on the parent level if
+the parent has split since the stack was built — same recovery as
+`_bt_pagedel()`.
+
+No deadlock because:
+- Left → Right at leaf level ✅
+- Leaf → Parent (bottom-to-top) ✅
+- We never hold a parent lock while trying to acquire a leaf lock
+
+---
+
+## 7. High Key & Pivot Tuple Invariants
+
+Kirk's concern: *"I don't know how you will satisfy the internal pages
+(pivot) invariant when you page small pages to large pages to not break
+the high keys and the traversing of the B-tree."*
+
+### High Key Rule
+
+The rebuilt destination page (R) keeps its own high key, written at
+offset `P_HIKEY` via `PageAddItem()` during the page rebuild.  Since L's
+keys are all < R's high key (sibling ordering invariant), the combined
+page satisfies the high key constraint.  We only update the high key of
+the page itself; no parent-level high key modifications are needed
+(parent pivots are handled separately below).
+
+```
+ L.high_key = 20    L has keys: [5, 10, 15]
+ R.high_key = 40    R has keys: [25, 30]
+
+ Rebuilt R: high_key = 40, keys = [5, 10, 15, 25, 30]  (all ≤ 40 ✓)
+```
+
+The high key is written at offset `P_HIKEY` during the page rebuild via
+`PageAddItem()`.  This is part of the `memcpy` in the critical section,
+so it is atomic with the data movement.
+
+### Parent Pivot Update
+
+The parent update uses the same two primitives as `_bt_mark_page_halfdead()`:
+
+```
+ BTreeTupleSetDownLink(parent[l_poffset], rblkno)   — redirect L's slot to R
+ PageIndexTupleDelete(parent, r_poffset)            — remove R's pivot
+ Parent: [(-∞)→L] [(20)→R] [(40)→S]  →  [(-∞)→R] [(40)→S]
+```
+
+The result is one fewer downlink, one fewer pivot, and R (the destination)
+owns the combined key range.  Key space moved right.
+
+**Space consideration:** R's high key might be physically larger than
+L's old high key (different suffix truncation).  We account for this in
+`_bt_can_merge_into()` before entering the critical section.
+
+---
+
+## 8. Source Page Deletion — Why We Must Delete Immediately
+
+### The Fatal Flaw of Leaving the Source Page Alive
+
+```
+ After merge, source page S is empty but alive:
+   Parent still has S's downlink.  S still "owns" its key range.
+
+ Next INSERT(key in S's range):
+   1. _bt_search(): follows S's downlink → descends to S
+   2. _bt_moveright(): key ≤ S.high_key → stays on S
+   3. _bt_findinsertloc(): S has free space → INSERT ON S
+   4. S is no longer empty.
+
+ Next VACUUM:
+   5. btvacuumpage(S): page has data → NOT empty → skip deletion
+   Result: merge accomplished NOTHING. ❌
+```
+
+### The Solution: Delete Source as Part of the Merge
+
+By removing the source page's parent downlink and marking it `BTP_HALF_DEAD`
+atomically with the data movement:
+
+1. **No insert can reach the source** — `_bt_search()` /
+   `_bt_findinsertloc()` can never descend to it because there is no
+   parent downlink.
+2. **Scans with stale references** see `P_IGNORE()` and move right
+   via `_bt_moveright()` (nbtsearch.c:306) or `_bt_readnextpage()`
+   (nbtsearch.c:1917).
+3. **Tombstone** stays with intact sibling links until `safexid` ages
+   out (the standard drain technique, README line 392).
+4. **VACUUM recycles** the page when `BTPageIsRecyclable()` (nbtree.h)
+   returns true.
+
+### Timeline
+
+```
+ T0: Merge Phase 1 — move data, update parent, mark source half-dead
+     (XLOG_BTREE_MERGE)
+ T1: Merge Phase 2 — _bt_unlink_halfdead_page() unlinks source from
+     sibling chain, marks BTP_DELETED with safexid
+     (XLOG_BTREE_UNLINK_PAGE)
+ T2: Source is a tombstone.  Sibling links still point through it.
+     Concurrent scans with stale references follow btpo_next past it.
+ T3: safexid ages out — all scans that could reference source are gone.
+ T4: Next VACUUM encounters source, BTPageIsRecyclable() → true
+     → RecordFreeIndexPage() → source recycled into FSM.
+```
+
+### Reused Infrastructure
+
+| Operation | Reused Function | Location |
+|-----------|----------------|----------|
+| Find parent downlink | `_bt_lock_subtree_parent()` | nbtpage.c:2817 |
+| Parent pivot surgery | `_bt_mark_page_halfdead()` logic | nbtpage.c:2218 |
+| Left sibling split check | `_bt_leftsib_splitflag()` | nbtpage.c:1682 |
+| Right sibling half-dead check | `_bt_rightsib_halfdeadflag()` | nbtpage.c |
+| Sibling chain unlink | `_bt_unlink_halfdead_page()` | nbtpage.c:2316 |
+| Stamp safexid | `ReadNextFullTransactionId()` | procglobal.c |
+| Check recyclability | `BTPageIsRecyclable()` | nbtree.h |
+| Transfer predicate locks | `PredicateLockPageCombine()` | predicate.c |
+
+---
+
+## 9. WAL Logging
+
+The merge atomically modifies three pages (destination, source, parent)
+in a single critical section, so we need **one WAL record** for the
+merge.  The subsequent sibling unlink uses the existing
+`XLOG_BTREE_UNLINK_PAGE` record generated by
+`_bt_unlink_halfdead_page()`.
+
+### WAL Record Definition
+
+```c
+/* New WAL record type — add to nbtxlog.h */
+#define XLOG_BTREE_MERGE    0xF0
+
+typedef struct xl_btree_merge
+{
+    OffsetNumber poffset;       /* offset of L's downlink in parent */
+    uint16       ntuples;       /* total tuples on rebuilt destination page */
+} xl_btree_merge;
+
+#define SizeOfBtreeMerge    (offsetof(xl_btree_merge, ntuples) + sizeof(uint16))
+```
+
+### Block References
+
+| Block ID | Page | Flags | Content |
+|----------|------|-------|---------|
+| 0 | Destination | `REGBUF_WILL_INIT` | Full merged tuple data (packed in `_bt_restore_page()` format) |
+| 1 | Source | `REGBUF_WILL_INIT` | Becomes half-dead tombstone (truncated top-parent link tuple) |
+| 2 | Parent | `REGBUF_STANDARD` | Downlink redirected, pivot entry deleted |
+
+We use `REGBUF_WILL_INIT` for both destination and source because both
+pages are completely rebuilt: destination gets merged data, source becomes
+a half-dead tombstone.  Same approach as the right page in
+`btree_xlog_split()` (nbtxlog.c:250).
+
+### WAL Record Construction (inside the critical section)
+
+```c
+XLogBeginInsert();
+
+/* Block 0: destination — full page rebuilt */
+XLogRegisterBuffer(0, dstbuf, REGBUF_WILL_INIT);
+XLogRegisterBufData(0, (char *) packed_tuples, packed_len);
+
+/* Block 1: source — becomes half-dead */
+XLogRegisterBuffer(1, srcbuf, REGBUF_WILL_INIT);
+XLogRegisterBufData(1, (char *) halfdead_data, halfdead_len);
+
+/* Block 2: parent — pivot surgery */
+XLogRegisterBuffer(2, parentbuf, REGBUF_STANDARD);
+
+xl_btree_merge xlrec;
+xlrec.poffset    = poffset;
+xlrec.ntuples    = ntuples;
+XLogRegisterData((char *) &xlrec, SizeOfBtreeMerge);
+
+XLogRecPtr recptr = XLogInsert(RM_BTREE_ID, XLOG_BTREE_MERGE);
+PageSetLSN(dstpage, recptr);
+PageSetLSN(srcpage, recptr);
+PageSetLSN(parentpage, recptr);
+```
+
+### Two-Record Pattern (same as `_bt_pagedel()`)
+
+```
+ Record 1 (new):      XLOG_BTREE_MERGE
+   Data movement + parent pivot update + source marked half-dead.
+   3 blocks: destination, source, parent.
+
+ Record 2 (existing): XLOG_BTREE_UNLINK_PAGE
+   Sibling surgery: left_sib.btpo_next = right_sib, etc.
+   Generated by _bt_unlink_halfdead_page() — zero new code.
+
+ Crash between them is safe: source is half-dead, next VACUUM finishes
+ the unlink (same recovery as crash during _bt_pagedel).
+```
+
+---
+
+## 10. Crash Recovery (REDO)
+
+### Replay Function
+
+```c
+/*
+ * btree_xlog_merge -- replay a XLOG_BTREE_MERGE record.
+ *
+ * Reconstructs the destination page from packed tuple data using
+ * _bt_restore_page() (same as btree_xlog_split), rebuilds the source
+ * page as a half-dead tombstone, and replays the parent pivot surgery.
+ */
+static void
+btree_xlog_merge(XLogReaderState *record)
+{
+    xl_btree_merge *xlrec =
+        (xl_btree_merge *) XLogRecGetData(record);
+    XLogRecPtr lsn = record->EndRecPtr;
+    Buffer     buf;
+
+    /*
+     * Replay destination (block 0) — full page rebuild.
+     * Uses _bt_restore_page() — same as btree_xlog_split() for the
+     * right page (nbtxlog.c:275).
+     */
+    buf = XLogInitBufferForRedo(record, 0);
+    {
+        Page  page = BufferGetPage(buf);
+        char *data;
+        Size  datalen;
+
+        _bt_pageinit(page, BLCKSZ);
+        data = XLogRecGetBlockData(record, 0, &datalen);
+        _bt_restore_page(page, data, datalen);
+        PageSetLSN(page, lsn);
+        MarkBufferDirty(buf);
+    }
+    UnlockReleaseBuffer(buf);
+
+    /*
+     * Replay source (block 1) — rebuild as half-dead page.
+     * Same pattern as btree_xlog_mark_page_halfdead() (nbtxlog.c:760).
+     */
+    buf = XLogInitBufferForRedo(record, 1);
+    {
+        Page           page = BufferGetPage(buf);
+        BTPageOpaque   opaque;
+        char          *data;
+        Size           datalen;
+
+        _bt_pageinit(page, BLCKSZ);
+        opaque = BTPageGetOpaque(page);
+        opaque->btpo_flags = BTP_HALF_DEAD | BTP_LEAF;
+
+        data = XLogRecGetBlockData(record, 1, &datalen);
+        if (datalen > 0)
+            _bt_restore_page(page, data, datalen);
+
+        PageSetLSN(page, lsn);
+        MarkBufferDirty(buf);
+    }
+    UnlockReleaseBuffer(buf);
+
+    /*
+     * Replay parent (block 2) — pivot surgery.
+     * Same logic as btree_xlog_mark_page_halfdead() (nbtxlog.c:738).
+     */
+    if (XLogReadBufferForRedo(record, 2, &buf) == BLK_NEEDS_REDO)
+    {
+        Page         page = BufferGetPage(buf);
+        BlockNumber  rblkno;
+
+        XLogRecGetBlockTag(record, 0, NULL, NULL, &rblkno);
+
+        /* L→R: overwrite L's downlink to point to R */
+        ItemId     iid = PageGetItemId(page, xlrec->poffset);
+        IndexTuple itup = (IndexTuple) PageGetItem(page, iid);
+        BTreeTupleSetDownLink(itup, rblkno);
+        PageIndexTupleDelete(page, OffsetNumberNext(xlrec->poffset));
+
+        PageSetLSN(page, lsn);
+        MarkBufferDirty(buf);
+    }
+    if (BufferIsValid(buf))
+        UnlockReleaseBuffer(buf);
+}
+```
+
+### Crash Scenarios
+
+| Scenario | State After Recovery |
+|----------|---------------------|
+| Crash BEFORE `XLOG_BTREE_MERGE` flush | Merge never happened.  All pages unchanged. |
+| Crash AFTER `XLOG_BTREE_MERGE`, BEFORE `XLOG_BTREE_UNLINK_PAGE` | `btree_xlog_merge()` replays: destination has merged data, source is half-dead, parent updated.  Source's sibling links still intact.  Next VACUUM calls `_bt_pagedel()` → finds source half-dead → calls `_bt_unlink_halfdead_page()` to finish.  Same recovery as crash during `_bt_pagedel()`. |
+| Crash AFTER both records flush | Both replay.  Source fully deleted with safexid.  Destination has data.  Parent correct.  Sibling links bypass source. |
+
+---
+
+## 11. Concurrency: How Concurrent Scans See the Merge
+
+The nbtree README (line 235) acknowledges:
+
+> "Merging partly-full pages would allow better space reuse, but it seems
+> impractical to move existing data items left or right to make this happen
+> — a scan moving in the opposite direction might miss the items if so."
+
+This section confronts this problem directly.
+
+### 11.1 Same-Parent Constraint
+
+Before discussing scan concurrency, there is a structural precondition:
+**source and destination must be children of the same parent page.**
+
+The README (line 273):
+
+> "To preserve consistency on the parent level, we cannot merge the key
+> space of a page into its right sibling unless the right sibling is a
+> child of the same parent."
+
+**Can siblings have different parents?**  Yes.  After parent-level splits,
+two leaf siblings can end up as the rightmost child of one parent and the
+leftmost child of another.
+
+**How we handle it:**  `_bt_lock_subtree_parent()` (nbtpage.c:2817) finds
+L's downlink in the parent via the search stack.  We then verify that R's
+downlink is the next entry in the same parent page — the same cross-check
+`_bt_mark_page_halfdead()` does at nbtpage.c:2182.  If the check fails,
+the merge is aborted.
+
+### 11.2 Forward Scan Reprocessing Problem
+
+This is the core challenge that distinguishes merge from existing page
+deletion.  Page deletion only deletes **empty** pages — no data to
+reprocess.  Our merge deletes a page with **live data**.
+
+```
+ Timeline (L→R merge, forward scan):
+
+ T1: Scanner reads L → BTScanPosData has [5, 10]
+ T2: Scanner releases lock on L (_bt_drop_lock_and_maybe_pin)
+ T3: Scanner returns 5, 10 to executor
+
+ T4: Merge acquires cleanup locks on L, R
+ T5: Merge moves [5, 10] to R → R now has [5, 10, 25, 30]
+ T6: Merge releases all locks
+
+ T7: Scanner steps to R (_bt_steppage → _bt_readnextpage)
+ T8: Scanner reads R → gets [5, 10, 25, 30]
+ T9: Scanner returns 5 AGAIN → REPROCESSED ❌
+```
+
+**Why splits don't have this problem:** during a split, data moves RIGHT
+into a NEW page.  The scanner on the original page sees post-split content
+(via its lock).  When it follows the right-link, it finds only HIGHER keys.
+
+### 11.3 Backward Scan Missing-Data Problem
+
+```
+ Timeline (L→R merge, backward scan):
+
+ T1: Scanner reads R → BTScanPosData has [30, 25]
+ T2: Scanner releases lock on R
+
+ T3: Merge moves [5, 10] from L to R → R now has [5, 10, 25, 30]
+     L is now half-dead.
+
+ T4: Scanner steps left to L
+ T5: L is P_IGNORE → scanner skips to L's left sibling
+ T6: Scanner never sees [5, 10] → MISSED ❌
+```
+
+### 11.4 Why Existing Page Deletion Doesn't Have These Problems
+
+`_bt_pagedel()` only deletes pages with ZERO data tuples — asserted at
+nbtpage.c:2113 (`P_FIRSTDATAKEY(opaque) > PageGetMaxOffsetNumber(page)`).
+When a scanner encounters an empty deleted page, there is nothing to
+reprocess or miss.
+
+The drain technique (`safexid` / `BTPageIsRecyclable()`) protects page
+**recycling**, not data visibility.  It ensures deleted pages aren't
+overwritten while scanners might still navigate through them via sibling
+links.  But the scanner only uses those links to move past the deleted
+page — it never reads data from it.
+
+### 11.5 Solution: Cleanup Lock on Both Source and Destination
+
+The key insight: `LockBufferForCleanup()` (bufmgr.c:6701) blocks until
+**no other backend has a pin on the buffer**.  By acquiring cleanup locks
+on both the source and destination pages:
+
+```
+ T1: Merge acquires cleanup lock on L — waits for all L pins to drain
+ T2: Merge acquires cleanup lock on R — waits for all R pins to drain
+     At this point: no scan is reading L, no scan is reading R,
+     and no scan is transitioning between them (because transitioning
+     requires holding a pin on at least one of them)
+ T3: Merge executes safely
+```
+
+**Analysis of the pin gap:**  Can a scanner be between L and R holding NO
+pin on either?  The code path in `_bt_steppage()` (nbtsearch.c:1705):
+
+```c
+BTScanPosUnpinIfPinned(so->currPos)   /* step 1: release pin on L */
+/* ... */
+so->currPos.buf = _bt_getbuf(rel, blkno, BT_READ)  /* step 2: pin+lock R */
+```
+
+Between steps 1 and 2, the scanner holds zero pins.  This is an extremely
+narrow window (a few CPU instructions).  `LockBufferForCleanup()` on R
+could theoretically succeed during this gap.
+
+**Practical assessment:**  This gap is the same class of risk tolerated
+elsewhere in PostgreSQL — for example, `_bt_killitems()` (nbtutils.c:269)
+uses an LSN comparison to handle the race where a page changed between
+reads.  The gap is nanoseconds wide under normal conditions.
+
+### 11.6 Summary
+
+| Scenario | Risk | Mitigation |
+|----------|------|------------|
+| Forward scan read source, merge runs, scanner reads destination | Reprocessing | Cleanup lock on both pages — scanner must have released all pins first |
+| Backward scan read destination, merge runs, scanner skips source | Missing data | Same cleanup lock protection |
+| Scanner arrives at source after merge | None | Source is `P_IGNORE`, scanner follows right-link via `_bt_moveright()` / `_bt_readnextpage()` |
+| Scanner arrives at destination after merge | None | Destination has complete, sorted data |
+| Insert into source's old key range | None | Parent directs inserts to destination |
+| Concurrent `_bt_pagedel()` on adjacent pages | Abort | Validation checks detect inconsistency |
+
+---
+
+## 12. The New Command
+
+The merge runs as a **standalone user-invoked command**, completely
+independent of VACUUM.  VACUUM's only interaction is to eventually recycle
+the tombstone pages (deleted pages with aged-out `safexid`) via its
+existing `BTPageIsRecyclable()` path — the same thing VACUUM already does
+for pages deleted by `_bt_pagedel()`.
+
+### Separation of Concerns
+
+```
+ Our new command:
+   - Scans leaf pages of a B-tree index
+   - Identifies merge candidates (below low threshold)
+   - Merges bloated left pages into their right same-parent siblings
+   - Leaves source pages as BTP_DELETED tombstones with safexid
+   - Generates XLOG_BTREE_MERGE + XLOG_BTREE_UNLINK_PAGE WAL records
+
+ VACUUM (unchanged, zero coupling):
+   - Removes dead tuples from pages (existing)
+   - Deletes completely empty pages via _bt_pagedel() (existing)
+   - Recycles tombstone pages when BTPageIsRecyclable() returns true (existing)
+   - Has NO knowledge of our merge operation
+   - Treats our tombstones identically to _bt_pagedel() tombstones
+```
+
+### Scan Strategy
+
+The command scans leaf pages left-to-right (same direction as VACUUM's
+`btvacuumscan()`).  For each page below the merge threshold:
+
+1. Check if the right same-parent sibling can absorb this page's data.
+2. Verify the data fits and the result stays below the high threshold.
+3. Execute the merge (source = this page, destination = right sibling).
+
+```
+ _bt_merge_scan(rel, heaprel):
+   for each leaf page P (left to right):
+     if _bt_is_merge_candidate(P):
+       R = P's right sibling
+       if R exists and same parent and _bt_can_merge_into(P, R):
+         _bt_try_merge(rel, heaprel, src=P, dst=R)
+```
+
+### The `_bt_try_merge()` Function
+
+```c
+/*
+ * _bt_try_merge -- attempt to merge source page into destination page.
+ *
+ * Both pages must be leaf pages and children of the same parent.
+ * The source page's data is moved to the destination page, and
+ * the source page is deleted from the tree.
+ *
+ * Returns true on success (source is deleted), false if any validation
+ * check failed (both pages are untouched).
+ *
+ * On success, the source page is marked BTP_DELETED with a safexid.
+ * It remains as a tombstone until the safexid ages out, at which point
+ * VACUUM recycles it via BTPageIsRecyclable().
+ *
+ * Reuses:
+ *   _bt_search()                  — build search stack (nbtsearch.c:99)
+ *   _bt_lock_subtree_parent()     — find+lock parent   (nbtpage.c:2817)
+ *   _bt_getstackbuf()             — re-find downlink    (nbtinsert.c:2335)
+ *   _bt_pgaddtup()                — add tuples to page  (nbtinsert.c:2626)
+ *   _bt_pageinit()                — initialize page     (nbtpage.c:1107)
+ *   _bt_leftsib_splitflag()       — check left sibling  (nbtpage.c:1682)
+ *   _bt_rightsib_halfdeadflag()   — check right sibling (nbtpage.c)
+ *   _bt_unlink_halfdead_page()    — sibling chain unlink(nbtpage.c:2316)
+ *   _bt_freestack()               — free search stack   (nbtutils.c:149)
+ *   PredicateLockPageCombine()    — transfer pred locks (predicate.c)
+ *   LockBufferForCleanup()        — cleanup lock        (bufmgr.c:6701)
+ *   ReadNextFullTransactionId()   — safexid stamp       (procglobal.c)
+ *   BTreeTupleSetDownLink()       — set pivot downlink  (nbtree.h macro)
+ *   PageIndexTupleDelete()        — remove pivot entry  (bufpage.c)
+ *   BTPageSetDeleted()            — mark page deleted   (nbtree.h macro)
+ */
+bool
+_bt_try_merge(Relation rel, Relation heaprel,
+              BlockNumber lblkno, BlockNumber rblkno)
+```
+
+---
+
+## 13. Edge Cases & Restrictions
+
+### Pages That Cannot Be Merged (Source)
+
+| Condition | Reason | Checked By |
+|-----------|--------|------------|
+| Page is rightmost on level | No right sibling; also never deleted by `_bt_pagedel()` | `P_RIGHTMOST(opaque)` |
+| Page is root | Root is never deleted | `P_ISROOT(opaque)` |
+| Page has `BTP_INCOMPLETE_SPLIT` | Must finish split first | `P_INCOMPLETE_SPLIT(opaque)` |
+| Page has `BTP_HALF_DEAD` | Already being deleted | `P_ISHALFDEAD(opaque)` |
+| Page has `BTP_DELETED` | Already deleted | `P_ISDELETED(opaque)` |
+| Page is internal (non-leaf) | Leaf-only merges | `!P_ISLEAF(opaque)` |
+| Left sibling has `INCOMPLETE_SPLIT` | Same check `_bt_pagedel()` does | `_bt_leftsib_splitflag()` |
+| Right sibling is half-dead | Same check `_bt_pagedel()` does | `_bt_rightsib_halfdeadflag()` |
+| Source and destination have different parents | README line 273 forbids cross-parent merges | Same-parent cross-check (see Section 6) |
+| Destination can't absorb source's data | Combined fill > high threshold | `_bt_can_merge_into()` |
+
+### Internal (Non-Leaf) Pages
+
+Internal pages also suffer from bloat, but merging them is far more
+complex: internal pages contain downlinks (child pointers), and moving
+a downlink means the child page's parent has changed.  This creates
+cascading updates up and down the tree.
+
+**Leaf-only for the initial implementation.**  Internal page bloat can be
+addressed in a future iteration or left for `REINDEX CONCURRENTLY`.
+
+### Posting List Tuples (Deduplication)
+
+Posting list tuples (deduplicated entries with multiple TIDs for the same
+key) are moved as-is — they are standard `IndexTuple`s with a larger
+payload.  No special handling needed.
+
+### LP_DEAD Items
+
+If the source page has items marked LP_DEAD (kill hints from scans),
+they should be **skipped** during the merge — don't copy dead items to
+the destination.  Check `ItemIdIsDead(iid)` in the tuple copy loop.
+
+### Concurrent Inserts After Merge
+
+After the merge, the source page's parent downlink is gone and the page
+is `BTP_HALF_DEAD`.  An insert with a key in the source's old range:
+
+1. Descends through the parent → finds downlink now points to destination
+2. Locks destination, inserts tuple
+3. Correct — destination now owns the source's entire key range
+
+No race condition: parent pivot update and data movement happen
+atomically (same critical section, same WAL record).
+
+### Source Is the Leftmost Child of Its Parent
+
+If the source's downlink is the parent's first/minus-infinity item, the
+parent pivot update is handled by `_bt_mark_page_halfdead()` logic —
+overwrite the source's downlink to point to the destination and delete
+the destination's pivot.  This case is already handled.
+
+### Source Is the Only Child of Its Parent
+
+If the source is the sole child, deleting its downlink leaves the parent
+empty.  `_bt_lock_subtree_parent()` (nbtpage.c:2817) handles this
+recursively by checking the grandparent — same cascading parent deletion
+that `_bt_pagedel()` already supports.
+
+---
+
+## 14. Reusable Code Inventory
+
+A central goal is to **maximize reuse** of existing nbtree infrastructure.
+Every function listed here is called directly — we do not copy/paste code.
+
+### 14.1 Search & Navigation
+
+| Function | Location | Purpose in Merge |
+|----------|----------|------------------|
+| `_bt_search()` | nbtsearch.c:99 | Build search stack from root to source page's parent |
+| `_bt_getstackbuf()` | nbtinsert.c:2335 | Re-find source's downlink in parent (handles concurrent parent splits) |
+| `_bt_lock_subtree_parent()` | nbtpage.c:2817 | Lock parent, find source's downlink offset; handles rightmost-child and cascading parent deletion |
+| `_bt_freestack()` | nbtutils.c:149 | Free the search stack after merge completes |
+
+### 14.2 Tuple & Page Operations
+
+| Function | Location | Purpose in Merge |
+|----------|----------|------------------|
+| `_bt_pgaddtup()` | nbtinsert.c:2626 | Add each tuple to the rebuilt destination page (same loop as `_bt_split()`) |
+| `_bt_pageinit()` | nbtpage.c:1107 | Initialize temp page for rebuild; initialize source as half-dead during replay |
+| `PageAddItem()` | bufpage.c | Add high key to rebuilt page |
+| `PageIndexTupleDelete()` | bufpage.c | Remove redundant pivot entry from parent |
+| `PageGetFreeSpace()` | bufpage.c | Check destination's available space |
+| `PageGetTempPageCopySpecial()` | bufpage.c | Create temp page preserving opaque data (used by `_bt_dedup_pass()` pattern) |
+| `BTreeTupleSetDownLink()` | nbtree.h (macro) | Redirect source's downlink to destination |
+| `BTreeTupleGetDownLink()` | nbtree.h (macro) | Read downlink during same-parent validation |
+| `BTreeTupleSetTopParent()` | nbtree.h (macro) | Set top-parent link in source's half-dead high key |
+
+### 14.3 Page Deletion
+
+| Function | Location | Purpose in Merge |
+|----------|----------|------------------|
+| `_bt_unlink_halfdead_page()` | nbtpage.c:2316 | Phase 2 — unlink source from sibling chain, mark `BTP_DELETED` with safexid, WAL log `XLOG_BTREE_UNLINK_PAGE` |
+| `_bt_leftsib_splitflag()` | nbtpage.c:1682 | Pre-check: source's left sibling must not have `INCOMPLETE_SPLIT` |
+| `_bt_rightsib_halfdeadflag()` | nbtpage.c | Pre-check: source's right sibling must not be half-dead |
+| `ReadNextFullTransactionId()` | procglobal.c | Stamp safexid on deleted source (called by `_bt_unlink_halfdead_page()`) |
+| `BTPageIsRecyclable()` | nbtree.h | VACUUM uses this to decide when to recycle our tombstones |
+| `BTPageSetDeleted()` | nbtree.h (macro) | Mark source as deleted (called by `_bt_unlink_halfdead_page()`) |
+
+### 14.4 Locking & Buffer Management
+
+| Function | Location | Purpose in Merge |
+|----------|----------|------------------|
+| `LockBufferForCleanup()` | bufmgr.c:6701 | Cleanup lock on source and destination — waits for all pins to drain |
+| `_bt_getbuf()` | nbtpage.c | Acquire buffer with specified lock mode |
+| `_bt_relbuf()` | nbtpage.c | Release buffer (unlock + unpin) |
+| `_bt_lockbuf()` | nbtpage.c | Lock an already-pinned buffer |
+| `_bt_unlockbuf()` | nbtpage.c | Unlock without unpinning |
+| `ReadBuffer()` | bufmgr.c | Pin a buffer without locking |
+
+### 14.5 Predicate Locks & Visibility
+
+| Function | Location | Purpose in Merge |
+|----------|----------|------------------|
+| `PredicateLockPageCombine()` | predicate.c | Transfer predicate locks from source to destination (same call as `_bt_mark_page_halfdead()` at nbtpage.c:2201) |
+| `_bt_vacuum_cycleid()` | nbtutils.c:435 | May need to stamp destination with current cycle ID (same as `_bt_split()` at nbtinsert.c:1748) |
+
+### 14.6 WAL Infrastructure
+
+| Function | Location | Purpose in Merge |
+|----------|----------|------------------|
+| `_bt_restore_page()` | nbtxlog.c:36 | WAL replay: reconstruct destination page from packed tuple data (same as `btree_xlog_split()`) |
+| `XLogBeginInsert()` | xloginsert.c | Start WAL record construction |
+| `XLogRegisterBuffer()` | xloginsert.c | Register block references (3 blocks) |
+| `XLogRegisterData()` | xloginsert.c | Register `xl_btree_merge` header |
+| `XLogRegisterBufData()` | xloginsert.c | Register packed tuple data for destination |
+| `XLogInsert()` | xloginsert.c | Emit the WAL record |
+| `XLogInitBufferForRedo()` | xlogutils.c | Replay: initialize buffer from WAL (for `REGBUF_WILL_INIT` blocks) |
+| `XLogReadBufferForRedo()` | xlogutils.c | Replay: read buffer and check if redo needed (`REGBUF_STANDARD` blocks) |
+
+### 14.7 Summary: New vs. Reused
+
+| Component | New Code? | Reused From |
+|-----------|-----------|-------------|
+| Tuple iteration loop | No | `_bt_split()` pattern (nbtinsert.c:1542) |
+| Adding tuples to page | No | `_bt_pgaddtup()` (nbtinsert.c:2626) |
+| Page rebuild in temp buffer | No | `_bt_dedup_pass()` / `PGAlignedBlock` pattern |
+| WAL replay page rebuild | No | `_bt_restore_page()` (nbtxlog.c:36) |
+| Parent pivot update | No | `_bt_mark_page_halfdead()` primitives: `BTreeTupleSetDownLink()` + `PageIndexTupleDelete()` (nbtpage.c:2218) |
+| Parent finding/locking | No | `_bt_lock_subtree_parent()` (nbtpage.c:2817) |
+| Mark page half-dead | No | `_bt_mark_page_halfdead()` logic |
+| Sibling unlink | No | `_bt_unlink_halfdead_page()` — called directly |
+| Predicate lock transfer | No | `PredicateLockPageCombine()` (predicate.c) |
+| SafeXID stamp | No | `ReadNextFullTransactionId()` via `_bt_unlink_halfdead_page()` |
+| Page recycling | No | `BTPageIsRecyclable()` — VACUUM's existing path |
+| Search stack | No | `_bt_search()` (nbtsearch.c:99) |
+| Left sibling split check | No | `_bt_leftsib_splitflag()` (nbtpage.c:1682) |
+| Right sibling half-dead check | No | `_bt_rightsib_halfdeadflag()` (nbtpage.c) |
+| High key selection | No | `PageAddItem()` with R's high key — R is always the destination |
+| `_bt_try_merge()` | **Yes** | Orchestrator — internals are all reused |
+| `_bt_merge_pages()` | **Yes** | Data movement + parent update in critical section |
+| `XLOG_BTREE_MERGE` record | **Yes** | New WAL record (3 blocks, format mirrors split) |
+| `btree_xlog_merge()` replay | **Yes** | Calls `_bt_restore_page()`, same patterns as existing replay |
+| GUC definitions | **Yes** | Standard `guc_tables.c` entries |
+| `_bt_is_merge_candidate()` | **Yes** | Fill-percentage check |
+| `_bt_can_merge_into()` | **Yes** | Fit + threshold check |
+| New command infrastructure | **Yes** | Scan loop + merge invocation |
+
+---
+
+## 15. Testing Strategy
+
+### Correctness Tests with amcheck
+
+```sql
+-- After running merges, verify all invariants:
+SELECT bt_index_check('idx');              -- leaf-level checks
+SELECT bt_index_parent_check('idx');       -- parent-child invariants
+-- Both must return with no errors.
+```
+
+`bt_index_parent_check()` (contrib/amcheck/verify_nbtree.c) verifies:
+- Downlink lower-bound invariant via `bt_child_check()`
+- Child high-key matches parent pivot via `bt_child_highkey_check()`
+- No missing downlinks via `bt_downlink_missing_check()`
+
+### Regression Tests
+
+```sql
+-- 1. Create table + index
+CREATE TABLE merge_test (id int, val text);
+CREATE INDEX merge_idx ON merge_test (id);
+
+-- 2. Fill many pages
+INSERT INTO merge_test SELECT i, repeat('x', 100)
+  FROM generate_series(1, 100000) i;
+
+-- 3. Delete ~95% of rows (create severe bloat)
+DELETE FROM merge_test WHERE id % 20 != 0;
+VACUUM merge_test;  -- remove dead tuples, but leaves sparse pages
+
+-- 4. Run our new merge command with aggressive thresholds
+SET btree_merge_low_threshold = 50;
+SET btree_merge_high_threshold = 90;
+-- <run merge command on merge_idx>
+
+-- 5. Verify integrity
+SELECT bt_index_check('merge_idx');
+SELECT bt_index_parent_check('merge_idx');
+
+-- 6. Verify all data accessible
+SELECT count(*) FROM merge_test;  -- 5000
+
+-- 7. Index scan correctness (forward + backward)
+SET enable_seqscan = off;
+SELECT count(*) FROM merge_test WHERE id BETWEEN 1000 AND 5000;
+SELECT count(*) FROM merge_test WHERE id BETWEEN 1000 AND 5000
+  ORDER BY id DESC;
+
+-- 8. Index size should be smaller
+SELECT pg_relation_size('merge_idx');
+```
+
+### TAP Tests (Crash Recovery)
+
+```perl
+# In src/test/recovery/t/NNN_btree_merge.pl
+# 1. Create table + index, insert data, delete most, VACUUM
+# 2. Run merge command (generates XLOG_BTREE_MERGE + XLOG_BTREE_UNLINK_PAGE)
+# 3. Immediate shutdown (pg_ctl stop -m immediate)
+# 4. Restart (WAL replay)
+# 5. amcheck verification (bt_index_check + bt_index_parent_check)
+# 6. Data accessibility check
+```
+
+### Isolation Tests (Concurrency)
+
+```
+# In src/test/isolation/specs/btree-merge.spec
+
+# Test: forward scan during merge
+setup    { CREATE TABLE t(id int); CREATE INDEX idx ON t(id);
+           INSERT INTO t SELECT generate_series(1,10000);
+           DELETE FROM t WHERE id % 10 != 0; VACUUM t; }
+session s1 "scanner"  { BEGIN; SELECT * FROM t WHERE id BETWEEN 100 AND 500; }
+session s2 "merger"   { <run merge command on idx> }
+session s1 "scanner"  { SELECT * FROM t WHERE id BETWEEN 100 AND 500; COMMIT; }
+# Both SELECTs must return the same rows.
+
+# Test: backward scan during merge
+session s1 "scanner"  { BEGIN;
+  SELECT * FROM t WHERE id BETWEEN 100 AND 500 ORDER BY id DESC; }
+session s2 "merger"   { <run merge command on idx> }
+session s1 "scanner"  {
+  SELECT * FROM t WHERE id BETWEEN 100 AND 500 ORDER BY id DESC; COMMIT; }
+```
+
+### GUC Threshold Tests
+
+```sql
+-- Kirk's suggested minimums
+SET btree_merge_low_threshold = 1;
+SET btree_merge_high_threshold = 70;
+-- Only pages with ≤1% fill should be merged
+
+-- Disabled
+SET btree_merge_low_threshold = 0;
+-- No pages should be merged
+```
+
+### Source=R Direction Tests
+
+```sql
+-- Create scenario where right page is smaller than left page
+-- Verify destination rebuilt with R's high key, parent pivot update, amcheck passes
+```
+
+---
+
+## 16. Files to Modify
+
+### Core Implementation
+
+| File | Changes |
+|------|---------|
+| `src/backend/access/nbtree/nbtpage.c` | Add `_bt_try_merge()` — top-level merge orchestrator.  Add `_bt_merge_pages()` — the merge critical section (page rebuild, parent pivot update, mark source half-dead).  Reuses: `_bt_pgaddtup()`, `_bt_lock_subtree_parent()`, `_bt_unlink_halfdead_page()`, `PredicateLockPageCombine()`, `_bt_pageinit()`, `_bt_leftsib_splitflag()`, `_bt_rightsib_halfdeadflag()`. |
+| `src/backend/access/nbtree/nbtxlog.c` | Add `btree_xlog_merge()` — WAL replay.  Reuses `_bt_restore_page()` for destination page, follows `btree_xlog_mark_page_halfdead()` pattern for source and parent. |
+| `src/include/access/nbtxlog.h` | Add `XLOG_BTREE_MERGE` (0xF0), `xl_btree_merge` struct, `SizeOfBtreeMerge` |
+| `src/include/access/nbtree.h` | Add function prototypes: `_bt_try_merge()`, `_bt_is_merge_candidate()`, `_bt_can_merge_into()`.  Add GUC extern declarations. |
+
+### New Command
+
+| File | Changes |
+|------|---------|
+| `src/backend/access/nbtree/nbtree.c` | Add entry point for the new merge command — scans leaf pages, identifies candidates, calls `_bt_try_merge()` |
+
+### GUC Configuration
+
+| File | Changes |
+|------|---------|
+| `src/backend/utils/misc/guc_tables.c` | Add `btree_merge_low_threshold` and `btree_merge_high_threshold` |
+
+### WAL Description
+
+| File | Changes |
+|------|---------|
+| `src/backend/access/rmgrdesc/nbtdesc.c` | Add human-readable description for `XLOG_BTREE_MERGE` in `btree_desc()` |
+
+### Testing
+
+| File | Changes |
+|------|---------|
+| `src/test/regress/sql/btree_merge.sql` | Regression tests |
+| `src/test/regress/expected/btree_merge.out` | Expected output |
+| `src/test/isolation/specs/btree-merge.spec` | Concurrency tests |
+| `src/test/recovery/t/NNN_btree_merge.pl` | Crash recovery TAP tests |
+
+---
+
+## 17. Implementation Phases
+
+### Phase 1: Core Merge Function (Weeks 1–3)
+
+- [ ] Implement `_bt_merge_pages()` in `nbtpage.c`
+  - Build merged page in temp buffer (`PGAlignedBlock`, same as `_bt_split()`)
+  - Reuse `_bt_pgaddtup()` for tuple insertion
+  - Always L→R: high key from R, parent pivot identical to `_bt_mark_page_halfdead()`
+  - Lock parent via `_bt_lock_subtree_parent()` (nbtpage.c:2817)
+  - Update parent pivot: use `BTreeTupleSetDownLink()` +
+    `PageIndexTupleDelete()` (same primitives as `_bt_mark_page_halfdead()`)
+  - Replace destination page content with merged temp page
+  - Mark source as `BTP_HALF_DEAD`
+  - Transfer predicate locks via `PredicateLockPageCombine()`
+  - WAL log `XLOG_BTREE_MERGE` — 3 blocks
+  - Call `_bt_unlink_halfdead_page()` (nbtpage.c:2316) to complete Phase 2
+- [ ] Implement `btree_xlog_merge()` in `nbtxlog.c`
+  - Replay destination: `_bt_pageinit()` + `_bt_restore_page()` (same as
+    `btree_xlog_split()` at nbtxlog.c:275)
+  - Replay source: `_bt_pageinit()` + set `BTP_HALF_DEAD` + restore
+    truncated high key (same as `btree_xlog_mark_page_halfdead()`)
+  - Replay parent: `BTreeTupleSetDownLink()` + `PageIndexTupleDelete()`
+- [ ] Add `xl_btree_merge` struct + `XLOG_BTREE_MERGE` to `nbtxlog.h`
+- [ ] Add `XLOG_BTREE_MERGE` case to `btree_desc()` in `nbtdesc.c`
+- [ ] Basic regression test + amcheck verification
+- [ ] **Milestone:** Can manually trigger a merge on two pages, passes amcheck
+
+### Phase 2: Command & Candidate Detection (Weeks 4–6)
+
+- [ ] Implement `_bt_try_merge()` — top-level merge orchestrator
+  - Search stack via `_bt_search()` (nbtsearch.c:99)
+  - L/R cleanup locks via `LockBufferForCleanup()` (bufmgr.c:6701)
+  - All validation checks (see Section 13)
+  - Same-parent check via `_bt_lock_subtree_parent()` cross-check
+  - Calls `_bt_merge_pages()` for the critical section
+- [ ] Add `_bt_is_merge_candidate()` and `_bt_can_merge_into()`
+- [ ] Add GUC parameters in `guc_tables.c`
+- [ ] Implement the new command's scan loop: iterate leaf pages,
+  identify candidates, pick direction, invoke `_bt_try_merge()`
+- [ ] **Milestone:** New command automatically merges bloated pages
+
+### Phase 3: Concurrency & Safety (Weeks 7–9)
+
+- [ ] Write isolation tests (forward scan, backward scan during merge)
+- [ ] Write crash recovery TAP tests
+- [ ] Test with concurrent inserts into merge range
+- [ ] Test with concurrent `_bt_pagedel()` on adjacent pages
+- [ ] Handle edge cases (posting lists, LP_DEAD, incomplete splits)
+- [ ] Test L→R merge with amcheck verification
+- [ ] **Milestone:** All concurrency and crash tests pass
+
+### Phase 4: Performance & Polish (Weeks 10–12)
+
+- [ ] Benchmark with pgbench (bloat reduction, lock duration, query impact)
+- [ ] Test various GUC threshold combinations
+- [ ] Optimize: skip pages already checked, avoid redundant search stacks
+- [ ] Documentation (sgml docs, code comments following PostgreSQL style)
+- [ ] Prepare patch for pgsql-hackers review
+- [ ] **Milestone:** Patch ready for community review
+
+---
+
+## Appendix: Comparison — Merge vs. Existing Operations
+
+| Aspect | Page Split (`_bt_split`) | Page Delete (`_bt_pagedel`) | **Page Merge (new)** |
+|--------|--------------------------|-----------------------------|-----------------------|
+| Direction | → (right half created) | Key space → right | Key space → right (L into R) |
+| Pages locked | 2–3 (L, R, parent) | 3+ (left, target, right, parent) | **3 (src, dst, parent)** |
+| Sibling links changed | Yes | Yes | **Yes** (via `_bt_unlink_halfdead_page()`) |
+| Parent changed | Yes (new downlink added) | Yes (downlink removed) | **Yes** (downlink redirected, pivot removed) |
+| High key changed | Yes | No | **Yes** (destination rebuilt with R's high key) |
+| WAL records | `XLOG_BTREE_SPLIT_L/R` | `MARK_HALFDEAD` + `UNLINK` | **`XLOG_BTREE_MERGE`** + `UNLINK` |
+| Source page outcome | N/A | Immediate delete | **Immediate delete** (same as `_bt_pagedel`) |
+| Lock duration | ~100–500 μs | ~200–800 μs | **~200–500 μs** |
+| VACUUM coupling | None | N/A (is VACUUM) | **None** (independent command; VACUUM recycles tombstones) |
+
+---
+
+*This document incorporates feedback from Kirk Wolak (GSoC 2026 mentor)
+and will evolve as implementation progresses.*
