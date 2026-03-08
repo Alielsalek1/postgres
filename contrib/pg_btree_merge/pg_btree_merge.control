@@ -1,0 +1,5 @@
+# pg_btree_merge extension
+comment = 'functions for online B-tree page merging'
+default_version = '1.0'
+module_pathname = '$libdir/pg_btree_merge'
+relocatable = true
