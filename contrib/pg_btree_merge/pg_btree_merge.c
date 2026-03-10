@@ -215,25 +215,6 @@ mark_page_halfdead(Page page)
 	opaque->btpo_flags |= BTP_HALF_DEAD;
 }
 
-/*
- * Finalize page deletion once side links/downlinks are already updated.
- */
-static void
-mark_page_deleted(Page page)
-{
-	FullTransactionId safexid = GetCurrentFullTransactionId();
-	BTPageSetDeleted(page, safexid);
-}
-
-/* 
- * Get the block number from a parent's item (either downlink or high-key)
- */
-static BlockNumber
-get_blkno_from_tuple(IndexTuple itup)
-{
-	return BTreeTupleGetDownLink(itup);
-}
-
 static uint64
 run_merge_scan(Relation rel, BlockNumber startblk)
 {
@@ -342,27 +323,19 @@ run_merge_scan(Relation rel, BlockNumber startblk)
 			/* 1. Copy all items from left to right */
 			merge_pages_items(lpage, rpage);
 
-			/* 1.5 Mark source page half-dead while unlink is in progress */
+			/* 
+			 * 2. Mark source page half-dead.
+			 * We leave the sibling links (btpo_prev/btpo_next) as they are.
+			 * Standard PostgreSQL VACUUM will see the BTP_HALF_DEAD flag
+			 * and perform the sibling unlinking (_bt_unlink_halfdead_page) later.
+			 */
 			mark_page_halfdead(lpage);
 
-			/* 2. Update R's previous link to L's previous link */
-			ropaque->btpo_prev = lprev;
-
-			/* 3. Update Left Sibling's next link to point to R (if it exists) */
-			if (lprev != P_NONE)
-			{
-				Buffer		prev_buf = ReadBuffer(rel, lprev);
-				Page		prev_page = BufferGetPage(prev_buf);
-				BTPageOpaque prev_opaque = BTPageGetOpaque(prev_page);
-
-				prev_opaque->btpo_next = rblkno;
-				MarkBufferDirty(prev_buf);
-				ReleaseBuffer(prev_buf);
-			}
-
 			/* 
-			 * 3.5 Update the parent downlink target to point to R instead of L.
-			 * This maintains the B-tree structure and high-key invariants.
+			 * 3. Update the parent downlink target to point to R instead of L.
+			 * This is the critical "Stage 1" of page deletion. It ensures that 
+			 * searchers find the keyspace in R, and amcheck sees a consistent 
+			 * parent-child relationship.
 			 */
 			{
 				Page		ppage = BufferGetPage(pbuf);
@@ -370,9 +343,7 @@ run_merge_scan(Relation rel, BlockNumber startblk)
 				OffsetNumber maxoff = PageGetMaxOffsetNumber(ppage);
 
 				/* 
-				 * Redirection: Update L's downlink to R, then delete R's original
-				 * downlink if it's not the same one. This preserves the 
-				 * key range separator that actually describes R's contents.
+				 * Redirection: Update L's downlink to R. 
 				 */
 				BTreeTupleSetDownLink((IndexTuple) PageGetItem(ppage, PageGetItemId(ppage, parentoff)), rblkno);
 				
@@ -394,12 +365,6 @@ run_merge_scan(Relation rel, BlockNumber startblk)
 										parentblk, (unsigned int) parentoff, lblkno, rblkno)));
 			}
 
-			/* 4. Update left page's next pointer to point to R */
-			lopaque->btpo_next = rblkno;
-
-			/* 5. Final state after unlink work is complete: DELETED */
-			mark_page_deleted(lpage);
-
 			/* Mark both buffers dirty */
 			MarkBufferDirty(lbuf);
 			MarkBufferDirty(rbuf);
@@ -409,17 +374,23 @@ run_merge_scan(Relation rel, BlockNumber startblk)
 			ReleaseBuffer(pbuf);
 			merged_count++;
 
-			/* Move to the right page (which now contains merged data) */
+			/* 
+			 * Move to the next block. 
+			 * Use the target page's next pointer (rblkno->next) to skip the 
+			 * now HALF_DEAD page (lblkno) and the target page (rblkno).
+			 */
+			lblkno = ropaque->btpo_next;
+
+			/* Release buffers */
 			ReleaseBuffer(lbuf);
 			ReleaseBuffer(rbuf);
-			lblkno = rblkno;
 		}
 		else
 		{
 			/* Can't merge, move to right page */
+			lblkno = rblkno;
 			ReleaseBuffer(rbuf);
 			ReleaseBuffer(lbuf);
-			lblkno = rblkno;
 		}
 	}
 
