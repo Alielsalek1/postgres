@@ -215,6 +215,60 @@ mark_page_halfdead(Page page)
 	opaque->btpo_flags |= BTP_HALF_DEAD;
 }
 
+/*
+ * Find the parent page and the offset of the downlink pointing to child_blkno.
+ * Returns the buffer for the parent page (locked) or InvalidBuffer if not found.
+ */
+static Buffer
+find_parent(Relation rel, BlockNumber child_blkno, OffsetNumber *offnum)
+{
+	BlockNumber nblocks = RelationGetNumberOfBlocks(rel);
+	BlockNumber curblk;
+
+	for (curblk = 1; curblk < nblocks; curblk++)
+	{
+		Buffer		buf = ReadBuffer(rel, curblk);
+		Page		page = BufferGetPage(buf);
+		BTPageOpaque opaque;
+		OffsetNumber i,
+					maxoff;
+
+		if (PageIsNew(page))
+		{
+			ReleaseBuffer(buf);
+			continue;
+		}
+
+		opaque = BTPageGetOpaque(page);
+
+		/* We only care about internal (non-leaf) pages */
+		if (P_ISLEAF(opaque) || P_ISDELETED(opaque) || P_ISHALFDEAD(opaque))
+		{
+			ReleaseBuffer(buf);
+			continue;
+		}
+
+		maxoff = PageGetMaxOffsetNumber(page);
+		for (i = P_FIRSTDATAKEY(opaque); i <= maxoff; i = OffsetNumberNext(i))
+		{
+			ItemId		itemid = PageGetItemId(page, i);
+			IndexTuple	itup = (IndexTuple) PageGetItem(page, itemid);
+			BlockNumber downlink = BTreeTupleGetDownLink(itup);
+
+			if (downlink == child_blkno)
+			{
+				*offnum = i;
+				LockBuffer(buf, BT_WRITE);
+				return buf;
+			}
+		}
+
+		ReleaseBuffer(buf);
+	}
+
+	return InvalidBuffer;
+}
+
 static uint64
 run_merge_scan(Relation rel, BlockNumber startblk)
 {
@@ -224,9 +278,12 @@ run_merge_scan(Relation rel, BlockNumber startblk)
 
 	while (lblkno != P_NONE)
 	{
-		Buffer		lbuf, rbuf;
-		Page		lpage, rpage;
-		BTPageOpaque lopaque, ropaque;
+		Buffer		lbuf,
+					rbuf;
+		Page		lpage,
+					rpage;
+		BTPageOpaque lopaque,
+					ropaque;
 		BlockNumber rblkno;
 
 		/* Read left page */
@@ -253,62 +310,15 @@ run_merge_scan(Relation rel, BlockNumber startblk)
 		/* Try to merge if pages can fit together */
 		if (can_merge_pages(lpage, rpage))
 		{
-			BlockNumber lprev = lopaque->btpo_prev;
-			BlockNumber parentblk = P_NONE;
-			OffsetNumber parentoff = InvalidOffsetNumber;
-			Buffer		pbuf = InvalidBuffer;
-			BlockNumber nblocks;
-			BlockNumber curblk;
-			bool		found_parent = false;
+			Buffer		pbuf;
+			OffsetNumber parentoff;
 
 			/*
 			 * Find parent downlink to L before we start the critical section.
 			 */
-			nblocks = RelationGetNumberOfBlocks(rel);
-			for (curblk = 1; curblk < nblocks; curblk++)
-			{
-				Buffer		buf = ReadBuffer(rel, curblk);
-				Page		page = BufferGetPage(buf);
-				BTPageOpaque opaque;
-				OffsetNumber i, maxoff;
+			pbuf = find_parent(rel, lblkno, &parentoff);
 
-				if (PageIsNew(page))
-				{
-					ReleaseBuffer(buf);
-					continue;
-				}
-
-				opaque = BTPageGetOpaque(page);
-				if (P_ISLEAF(opaque) || P_ISDELETED(opaque) || P_ISHALFDEAD(opaque))
-				{
-					ReleaseBuffer(buf);
-					continue;
-				}
-
-				maxoff = PageGetMaxOffsetNumber(page);
-				for (i = P_FIRSTDATAKEY(opaque); i <= maxoff; i = OffsetNumberNext(i))
-				{
-					ItemId		itemid = PageGetItemId(page, i);
-					IndexTuple	itup = (IndexTuple) PageGetItem(page, itemid);
-					BlockNumber downlink = BTreeTupleGetDownLink(itup);
-
-					if (downlink == lblkno)
-					{
-						parentblk = curblk;
-						parentoff = i;
-						pbuf = buf;
-						found_parent = true;
-						break;
-					}
-				}
-
-				if (found_parent)
-					break;
-
-				ReleaseBuffer(buf);
-			}
-
-			if (!found_parent)
+			if (!BufferIsValid(pbuf))
 				elog(ERROR, "could not find parent downlink for block %u", lblkno);
 
 			ereport(NOTICE,
@@ -325,44 +335,45 @@ run_merge_scan(Relation rel, BlockNumber startblk)
 
 			/* 
 			 * 2. Mark source page half-dead.
-			 * We leave the sibling links (btpo_prev/btpo_next) as they are.
-			 * Standard PostgreSQL VACUUM will see the BTP_HALF_DEAD flag
-			 * and perform the sibling unlinking (_bt_unlink_halfdead_page) later.
 			 */
 			mark_page_halfdead(lpage);
 
 			/* 
-			 * 3. Update the parent downlink target to point to R instead of L.
-			 * This is the critical "Stage 1" of page deletion. It ensures that 
-			 * searchers find the keyspace in R, and amcheck sees a consistent 
-			 * parent-child relationship.
+			 * 3. Parent unlink stage:
+			 * Redirect L's downlink to R, then delete R's old downlink.
+			 * This preserves internal pivot tuple semantics expected by amcheck.
 			 */
 			{
 				Page		ppage = BufferGetPage(pbuf);
 				BTPageOpaque popaque = BTPageGetOpaque(ppage);
 				OffsetNumber maxoff = PageGetMaxOffsetNumber(ppage);
+				OffsetNumber i;
 
-				/* 
-				 * Redirection: Update L's downlink to R. 
-				 */
 				BTreeTupleSetDownLink((IndexTuple) PageGetItem(ppage, PageGetItemId(ppage, parentoff)), rblkno);
-				
-				/* Find and delete R's old downlink in the same parent */
-				for (OffsetNumber i = P_FIRSTDATAKEY(popaque); i <= maxoff; i = OffsetNumberNext(i))
+
+				for (i = P_FIRSTDATAKEY(popaque); i <= maxoff; i = OffsetNumberNext(i))
 				{
 					IndexTuple itup = (IndexTuple) PageGetItem(ppage, PageGetItemId(ppage, i));
-					if (BTreeTupleGetDownLink(itup) == rblkno && i != parentoff)
+
+					if (i != parentoff && BTreeTupleGetDownLink(itup) == rblkno)
 					{
 						PageIndexTupleDelete(ppage, i);
-						ereport(NOTICE, (errmsg("LOG: Deleted redundant downlink to %u at parent %u offset %u",
-												rblkno, parentblk, (unsigned int) i)));
+						ereport(NOTICE,
+								(errmsg("LOG: Deleted redundant downlink to %u at parent %u offset %u",
+										rblkno,
+										BufferGetBlockNumber(pbuf),
+										(unsigned int) i)));
 						break;
 					}
 				}
-				
+
 				MarkBufferDirty(pbuf);
-				ereport(NOTICE, (errmsg("LOG: Updated parent %u offset %u downlink: %u -> %u",
-										parentblk, (unsigned int) parentoff, lblkno, rblkno)));
+				ereport(NOTICE,
+						(errmsg("LOG: Updated parent %u offset %u downlink: %u -> %u",
+								BufferGetBlockNumber(pbuf),
+								(unsigned int) parentoff,
+								lblkno,
+								rblkno)));
 			}
 
 			/* Mark both buffers dirty */
@@ -371,13 +382,11 @@ run_merge_scan(Relation rel, BlockNumber startblk)
 
 			END_CRIT_SECTION();
 
-			ReleaseBuffer(pbuf);
+			UnlockReleaseBuffer(pbuf);
 			merged_count++;
 
 			/* 
 			 * Move to the next block. 
-			 * Use the target page's next pointer (rblkno->next) to skip the 
-			 * now HALF_DEAD page (lblkno) and the target page (rblkno).
 			 */
 			lblkno = ropaque->btpo_next;
 
