@@ -6,7 +6,7 @@ OBJS = \
 	pg_btree_merge.o
 
 EXTENSION = pg_btree_merge
-DATA = pg_btree_merge--1.0.sql
+DATA = sql/pg_btree_merge--1.0.sql
 PGFILEDESC = "pg_btree_merge - function for online B-tree page merging"
 
 ifdef USE_PGXS
@@ -19,3 +19,5 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
+
+REGRESS = test_merge test_scans

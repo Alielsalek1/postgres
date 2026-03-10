@@ -12,10 +12,10 @@ CREATE TABLE test_bloat (
 CREATE INDEX idx_test_bloat ON test_bloat(id);
 
 -- Insert test data
-INSERT INTO test_bloat (data) SELECT 'row ' || i::text FROM generate_series(1, 10000) i;
+INSERT INTO test_bloat (data) SELECT 'row ' || i::text FROM generate_series(1, 100000) i;
 
 -- Create sparsity by deleting 70% of rows
-DELETE FROM test_bloat WHERE id % 10 <= 6;
+DELETE FROM test_bloat WHERE id % 10 <= random() * 10;
 
 -- Show initial index size
 SELECT pg_relation_size('idx_test_bloat'::regclass) AS index_size_before;
