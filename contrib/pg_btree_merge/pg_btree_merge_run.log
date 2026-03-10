@@ -1,0 +1,26 @@
+2026-03-10 16:40:29.623 EET [388554] LOG:  starting PostgreSQL 19devel on x86_64-pc-linux-gnu, compiled by gcc (GCC) 15.2.1 20251111 (Red Hat 15.2.1-4), 64-bit
+2026-03-10 16:40:29.623 EET [388554] LOG:  listening on IPv6 address "::1", port 55439
+2026-03-10 16:40:29.623 EET [388554] LOG:  listening on IPv4 address "127.0.0.1", port 55439
+2026-03-10 16:40:29.623 EET [388554] LOG:  listening on Unix socket "/tmp/.s.PGSQL.55439"
+2026-03-10 16:40:29.625 EET [388565] LOG:  database system was shut down at 2026-03-10 16:40:29 EET
+2026-03-10 16:40:29.627 EET [388554] LOG:  database system is ready to accept connections
+2026-03-10 16:40:31.830 EET [388554] LOG:  received fast shutdown request
+2026-03-10 16:40:31.830 EET [388554] LOG:  aborting any active transactions
+2026-03-10 16:40:31.830 EET [388554] LOG:  background worker "logical replication launcher" (PID 388569) exited with exit code 1
+2026-03-10 16:40:31.831 EET [388563] LOG:  shutting down
+2026-03-10 16:40:31.831 EET [388563] LOG:  checkpoint starting: shutdown fast
+2026-03-10 16:40:31.840 EET [388563] LOG:  checkpoint complete: shutdown fast: wrote 977 buffers (6.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.008 s, sync=0.002 s, total=0.010 s; sync files=305, longest=0.001 s, average=0.001 s; distance=8288 kB, estimate=8288 kB; lsn=0/01FE08D0, redo lsn=0/01FE08D0
+2026-03-10 16:40:31.850 EET [388554] LOG:  database system is shut down
+2026-03-10 17:00:16.880 EET [420461] LOG:  starting PostgreSQL 19devel on x86_64-pc-linux-gnu, compiled by gcc (GCC) 15.2.1 20251111 (Red Hat 15.2.1-4), 64-bit
+2026-03-10 17:00:16.880 EET [420461] LOG:  listening on IPv6 address "::1", port 55439
+2026-03-10 17:00:16.880 EET [420461] LOG:  listening on IPv4 address "127.0.0.1", port 55439
+2026-03-10 17:00:16.881 EET [420461] LOG:  listening on Unix socket "/tmp/.s.PGSQL.55439"
+2026-03-10 17:00:16.882 EET [420467] LOG:  database system was shut down at 2026-03-10 17:00:16 EET
+2026-03-10 17:00:16.884 EET [420461] LOG:  database system is ready to accept connections
+2026-03-10 17:00:19.075 EET [420461] LOG:  received fast shutdown request
+2026-03-10 17:00:19.075 EET [420461] LOG:  aborting any active transactions
+2026-03-10 17:00:19.076 EET [420461] LOG:  background worker "logical replication launcher" (PID 420470) exited with exit code 1
+2026-03-10 17:00:19.076 EET [420465] LOG:  shutting down
+2026-03-10 17:00:19.076 EET [420465] LOG:  checkpoint starting: shutdown fast
+2026-03-10 17:00:19.084 EET [420465] LOG:  checkpoint complete: shutdown fast: wrote 977 buffers (6.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.007 s, sync=0.002 s, total=0.009 s; sync files=305, longest=0.001 s, average=0.001 s; distance=8288 kB, estimate=8288 kB; lsn=0/01FE08D0, redo lsn=0/01FE08D0
+2026-03-10 17:00:19.093 EET [420461] LOG:  database system is shut down

@@ -1,0 +1,577 @@
+Test output log: /home/alilililili/Projects/postgres/contrib/pg_btree_merge/pg_btree_merge_test_output.log
+PostgreSQL server log: /home/alilililili/Projects/postgres/contrib/pg_btree_merge/pg_btree_merge_run.log
+=== [1/6] Building and Installing Extension ===
+make: Entering directory '/home/alilililili/Projects/postgres/contrib/pg_btree_merge'
+rm -f pg_btree_merge.so   libpg_btree_merge.a  libpg_btree_merge.pc
+rm -f  pg_btree_merge.o pg_btree_merge.bc
+make: Leaving directory '/home/alilililili/Projects/postgres/contrib/pg_btree_merge'
+make: Entering directory '/home/alilililili/Projects/postgres/contrib/pg_btree_merge'
+make -C ../../src/backend generated-headers
+make[1]: Entering directory '/home/alilililili/Projects/postgres/src/backend'
+make -C ../include/catalog generated-headers
+make[2]: Entering directory '/home/alilililili/Projects/postgres/src/include/catalog'
+make[2]: Nothing to be done for 'generated-headers'.
+make[2]: Leaving directory '/home/alilililili/Projects/postgres/src/include/catalog'
+make -C nodes generated-header-symlinks
+make[2]: Entering directory '/home/alilililili/Projects/postgres/src/backend/nodes'
+make[2]: Nothing to be done for 'generated-header-symlinks'.
+make[2]: Leaving directory '/home/alilililili/Projects/postgres/src/backend/nodes'
+make -C utils generated-header-symlinks
+make[2]: Entering directory '/home/alilililili/Projects/postgres/src/backend/utils'
+make -C adt jsonpath_gram.h
+make[3]: Entering directory '/home/alilililili/Projects/postgres/src/backend/utils/adt'
+make[3]: 'jsonpath_gram.h' is up to date.
+make[3]: Leaving directory '/home/alilililili/Projects/postgres/src/backend/utils/adt'
+make[2]: Leaving directory '/home/alilililili/Projects/postgres/src/backend/utils'
+make[1]: Leaving directory '/home/alilililili/Projects/postgres/src/backend'
+gcc -Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Werror=vla -Wendif-labels -Wmissing-format-attribute -Wimplicit-fallthrough=5 -Wcast-function-type -Wshadow=compatible-local -Wformat-security -Wmissing-variable-declarations -fno-strict-aliasing -fwrapv -fexcess-precision=standard -Wno-format-truncation -Wno-stringop-truncation -O2 -fPIC -fvisibility=hidden -I. -I. -I../../src/include -D_GNU_SOURCE      -c -o pg_btree_merge.o pg_btree_merge.c
+pg_btree_merge.c:94:1: warning: ‘log_leaf_chain_state’ defined but not used [-Wunused-function]
+   94 | log_leaf_chain_state(Relation rel, BlockNumber startblk)
+      | ^~~~~~~~~~~~~~~~~~~~
+gcc -Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Werror=vla -Wendif-labels -Wmissing-format-attribute -Wimplicit-fallthrough=5 -Wcast-function-type -Wshadow=compatible-local -Wformat-security -Wmissing-variable-declarations -fno-strict-aliasing -fwrapv -fexcess-precision=standard -Wno-format-truncation -Wno-stringop-truncation -O2 -fPIC -fvisibility=hidden -shared -o pg_btree_merge.so  pg_btree_merge.o -L../../src/port -L../../src/common    -Wl,--as-needed -Wl,-rpath,'/usr/local/pgsql/lib',--enable-new-dtags -fvisibility=hidden 
+make: Leaving directory '/home/alilililili/Projects/postgres/contrib/pg_btree_merge'
+make: Entering directory '/home/alilililili/Projects/postgres/contrib/pg_btree_merge'
+make -C ../../src/backend generated-headers
+make[1]: Entering directory '/home/alilililili/Projects/postgres/src/backend'
+make -C ../include/catalog generated-headers
+make[2]: Entering directory '/home/alilililili/Projects/postgres/src/include/catalog'
+make[2]: Nothing to be done for 'generated-headers'.
+make[2]: Leaving directory '/home/alilililili/Projects/postgres/src/include/catalog'
+make -C nodes generated-header-symlinks
+make[2]: Entering directory '/home/alilililili/Projects/postgres/src/backend/nodes'
+make[2]: Nothing to be done for 'generated-header-symlinks'.
+make[2]: Leaving directory '/home/alilililili/Projects/postgres/src/backend/nodes'
+make -C utils generated-header-symlinks
+make[2]: Entering directory '/home/alilililili/Projects/postgres/src/backend/utils'
+make -C adt jsonpath_gram.h
+make[3]: Entering directory '/home/alilililili/Projects/postgres/src/backend/utils/adt'
+make[3]: 'jsonpath_gram.h' is up to date.
+make[3]: Leaving directory '/home/alilililili/Projects/postgres/src/backend/utils/adt'
+make[2]: Leaving directory '/home/alilililili/Projects/postgres/src/backend/utils'
+make[1]: Leaving directory '/home/alilililili/Projects/postgres/src/backend'
+/usr/bin/mkdir -p '/home/alilililili/Projects/postgres/tmp_install/usr/local/pgsql/lib'
+/usr/bin/mkdir -p '/home/alilililili/Projects/postgres/tmp_install/usr/local/pgsql/share/extension'
+/usr/bin/mkdir -p '/home/alilililili/Projects/postgres/tmp_install/usr/local/pgsql/share/extension'
+/usr/bin/install -c -m 755  pg_btree_merge.so '/home/alilililili/Projects/postgres/tmp_install/usr/local/pgsql/lib/pg_btree_merge.so'
+/usr/bin/install -c -m 644 ./pg_btree_merge.control '/home/alilililili/Projects/postgres/tmp_install/usr/local/pgsql/share/extension/'
+/usr/bin/install -c -m 644 ./sql/pg_btree_merge--1.0.sql  '/home/alilililili/Projects/postgres/tmp_install/usr/local/pgsql/share/extension/'
+make: Leaving directory '/home/alilililili/Projects/postgres/contrib/pg_btree_merge'
+Build and Install complete.
+=== [2/6] Setting up environment ===
+Checking binaries from /home/alilililili/Projects/postgres/tmp_install/usr/local/pgsql/bin...
+/home/alilililili/Projects/postgres/tmp_install/usr/local/pgsql/bin/psql
+/home/alilililili/Projects/postgres/tmp_install/usr/local/pgsql/bin/initdb
+/home/alilililili/Projects/postgres/tmp_install/usr/local/pgsql/bin/pg_ctl
+/home/alilililili/Projects/postgres/tmp_install/usr/local/pgsql/bin/postgres
+=== [3/6] Initializing Test Server ===
+The files belonging to this database system will be owned by user "alilililili".
+This user must also own the server process.
+
+The database cluster will be initialized with locale "en_US.UTF-8".
+The default database encoding has accordingly been set to "UTF8".
+The default text search configuration will be set to "english".
+
+Data page checksums are enabled.
+
+creating directory /tmp/pg_btree_merge_test_db ... ok
+creating subdirectories ... ok
+selecting dynamic shared memory implementation ... posix
+selecting default "max_connections" ... 100
+selecting default "shared_buffers" ... 128MB
+selecting default time zone ... Africa/Cairo
+creating configuration files ... ok
+running bootstrap script ... ok
+performing post-bootstrap initialization ... ok
+syncing data to disk ... ok
+
+initdb: warning: enabling "trust" authentication for local connections
+initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+
+Success. You can now start the database server using:
+
+    pg_ctl -D /tmp/pg_btree_merge_test_db -l logfile start
+
+Starting PostgreSQL on port 55439...
+waiting for server to start.... done
+server started
+=== [4/6] Creating Test Database ===
+NOTICE:  database "test_merge_run" does not exist, skipping
+DROP DATABASE
+CREATE DATABASE
+Database 'test_merge_run' created.
+=== [5/6] Running B-Tree Merge Test ===
+CREATE EXTENSION
+CREATE EXTENSION
+CREATE TABLE
+CREATE INDEX
+INSERT 0 10000
+DELETE 9000
+ size_before_merge 
+-------------------
+ 1896 kB
+(1 row)
+
+BEGIN
+SELECT 1000
+ bt_index_check 
+----------------
+ 
+(1 row)
+
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  === pg_btree_merge_pages: START ===
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  === DURING MERGE ===
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Metapage - root block: 3, level: 1
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Descending to leftmost leaf...
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:    Level 0, block 3, is_leaf=0
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:    Level 0 downlink: parent 3 offset 1 -> child 1
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:    Level 1, block 1, is_leaf=1
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Reached leftmost leaf at block 1
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=1 (42 items) -> R=2 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 2 at parent 3 offset 2
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 1 downlink: 1 -> 2
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=4 (42 items) -> R=5 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 5 at parent 3 offset 3
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 2 downlink: 4 -> 5
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=6 (42 items) -> R=7 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 7 at parent 3 offset 4
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 3 downlink: 6 -> 7
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=8 (42 items) -> R=9 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 9 at parent 3 offset 5
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 4 downlink: 8 -> 9
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=10 (42 items) -> R=11 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 11 at parent 3 offset 6
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 5 downlink: 10 -> 11
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=12 (42 items) -> R=13 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 13 at parent 3 offset 7
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 6 downlink: 12 -> 13
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=14 (42 items) -> R=15 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 15 at parent 3 offset 8
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 7 downlink: 14 -> 15
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=16 (42 items) -> R=17 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 17 at parent 3 offset 9
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 8 downlink: 16 -> 17
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=18 (42 items) -> R=19 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 19 at parent 3 offset 10
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 9 downlink: 18 -> 19
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=20 (42 items) -> R=21 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 21 at parent 3 offset 11
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 10 downlink: 20 -> 21
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=22 (42 items) -> R=23 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 23 at parent 3 offset 12
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 11 downlink: 22 -> 23
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=24 (42 items) -> R=25 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 25 at parent 3 offset 13
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 12 downlink: 24 -> 25
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=26 (42 items) -> R=27 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 27 at parent 3 offset 14
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 13 downlink: 26 -> 27
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=28 (42 items) -> R=29 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 29 at parent 3 offset 15
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 14 downlink: 28 -> 29
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=30 (42 items) -> R=31 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 31 at parent 3 offset 16
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 15 downlink: 30 -> 31
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=32 (42 items) -> R=33 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 33 at parent 3 offset 17
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 16 downlink: 32 -> 33
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=34 (42 items) -> R=35 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 35 at parent 3 offset 18
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 17 downlink: 34 -> 35
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=36 (42 items) -> R=37 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 37 at parent 3 offset 19
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 18 downlink: 36 -> 37
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=38 (42 items) -> R=39 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 39 at parent 3 offset 20
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 19 downlink: 38 -> 39
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=40 (42 items) -> R=41 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 41 at parent 3 offset 21
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 20 downlink: 40 -> 41
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=42 (42 items) -> R=43 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 43 at parent 3 offset 22
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 21 downlink: 42 -> 43
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=44 (42 items) -> R=45 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 45 at parent 3 offset 23
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 22 downlink: 44 -> 45
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=46 (42 items) -> R=47 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 47 at parent 3 offset 24
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 23 downlink: 46 -> 47
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=48 (42 items) -> R=49 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 49 at parent 3 offset 25
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 24 downlink: 48 -> 49
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=50 (42 items) -> R=51 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 51 at parent 3 offset 26
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 25 downlink: 50 -> 51
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=52 (42 items) -> R=53 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 53 at parent 3 offset 27
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 26 downlink: 52 -> 53
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=54 (42 items) -> R=55 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 55 at parent 3 offset 28
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 27 downlink: 54 -> 55
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=56 (42 items) -> R=57 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 57 at parent 3 offset 29
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 28 downlink: 56 -> 57
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=58 (42 items) -> R=59 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 59 at parent 3 offset 30
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 29 downlink: 58 -> 59
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=60 (42 items) -> R=61 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 61 at parent 3 offset 31
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 30 downlink: 60 -> 61
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=62 (42 items) -> R=63 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 63 at parent 3 offset 32
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 31 downlink: 62 -> 63
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=64 (42 items) -> R=65 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 65 at parent 3 offset 33
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 32 downlink: 64 -> 65
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=66 (42 items) -> R=67 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 67 at parent 3 offset 34
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 33 downlink: 66 -> 67
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=68 (42 items) -> R=69 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 69 at parent 3 offset 35
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 34 downlink: 68 -> 69
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=70 (42 items) -> R=71 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 71 at parent 3 offset 36
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 35 downlink: 70 -> 71
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=72 (42 items) -> R=73 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 73 at parent 3 offset 37
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 36 downlink: 72 -> 73
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=74 (42 items) -> R=75 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 75 at parent 3 offset 38
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 37 downlink: 74 -> 75
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=76 (42 items) -> R=77 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 77 at parent 3 offset 39
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 38 downlink: 76 -> 77
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=78 (42 items) -> R=79 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 79 at parent 3 offset 40
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 39 downlink: 78 -> 79
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=80 (42 items) -> R=81 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 81 at parent 3 offset 41
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 40 downlink: 80 -> 81
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=82 (42 items) -> R=83 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 83 at parent 3 offset 42
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 41 downlink: 82 -> 83
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=84 (42 items) -> R=85 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 85 at parent 3 offset 43
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 42 downlink: 84 -> 85
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=86 (42 items) -> R=87 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 87 at parent 3 offset 44
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 43 downlink: 86 -> 87
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=88 (42 items) -> R=89 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 89 at parent 3 offset 45
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 44 downlink: 88 -> 89
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=90 (42 items) -> R=91 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 91 at parent 3 offset 46
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 45 downlink: 90 -> 91
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=92 (42 items) -> R=93 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 93 at parent 3 offset 47
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 46 downlink: 92 -> 93
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=94 (42 items) -> R=95 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 95 at parent 3 offset 48
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 47 downlink: 94 -> 95
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=96 (42 items) -> R=97 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 97 at parent 3 offset 49
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 48 downlink: 96 -> 97
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=98 (42 items) -> R=99 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 99 at parent 3 offset 50
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 49 downlink: 98 -> 99
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=100 (42 items) -> R=101 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 101 at parent 3 offset 51
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 50 downlink: 100 -> 101
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=102 (42 items) -> R=103 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 103 at parent 3 offset 52
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 51 downlink: 102 -> 103
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=104 (42 items) -> R=105 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 105 at parent 3 offset 53
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 52 downlink: 104 -> 105
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=106 (42 items) -> R=107 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 107 at parent 3 offset 54
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 53 downlink: 106 -> 107
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=108 (42 items) -> R=109 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 109 at parent 3 offset 55
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 54 downlink: 108 -> 109
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=110 (42 items) -> R=111 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 111 at parent 3 offset 56
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 55 downlink: 110 -> 111
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=112 (42 items) -> R=113 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 113 at parent 3 offset 57
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 56 downlink: 112 -> 113
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=114 (42 items) -> R=115 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 115 at parent 3 offset 58
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 57 downlink: 114 -> 115
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=116 (42 items) -> R=117 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 117 at parent 3 offset 59
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 58 downlink: 116 -> 117
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=118 (42 items) -> R=119 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 119 at parent 3 offset 60
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 59 downlink: 118 -> 119
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=120 (42 items) -> R=121 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 121 at parent 3 offset 61
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 60 downlink: 120 -> 121
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=122 (42 items) -> R=123 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 123 at parent 3 offset 62
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 61 downlink: 122 -> 123
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=124 (42 items) -> R=125 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 125 at parent 3 offset 63
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 62 downlink: 124 -> 125
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=126 (42 items) -> R=127 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 127 at parent 3 offset 64
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 63 downlink: 126 -> 127
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=128 (42 items) -> R=129 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 129 at parent 3 offset 65
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 64 downlink: 128 -> 129
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=130 (42 items) -> R=131 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 131 at parent 3 offset 66
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 65 downlink: 130 -> 131
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=132 (42 items) -> R=133 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 133 at parent 3 offset 67
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 66 downlink: 132 -> 133
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=134 (42 items) -> R=135 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 135 at parent 3 offset 68
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 67 downlink: 134 -> 135
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=136 (42 items) -> R=137 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 137 at parent 3 offset 69
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 68 downlink: 136 -> 137
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=138 (42 items) -> R=139 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 139 at parent 3 offset 70
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 69 downlink: 138 -> 139
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=140 (42 items) -> R=141 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 141 at parent 3 offset 71
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 70 downlink: 140 -> 141
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=142 (42 items) -> R=143 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 143 at parent 3 offset 72
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 71 downlink: 142 -> 143
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=144 (42 items) -> R=145 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 145 at parent 3 offset 73
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 72 downlink: 144 -> 145
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=146 (42 items) -> R=147 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 147 at parent 3 offset 74
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 73 downlink: 146 -> 147
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=148 (42 items) -> R=149 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 149 at parent 3 offset 75
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 74 downlink: 148 -> 149
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=150 (42 items) -> R=151 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 151 at parent 3 offset 76
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 75 downlink: 150 -> 151
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=152 (42 items) -> R=153 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 153 at parent 3 offset 77
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 76 downlink: 152 -> 153
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=154 (42 items) -> R=155 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 155 at parent 3 offset 78
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 77 downlink: 154 -> 155
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=156 (42 items) -> R=157 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 157 at parent 3 offset 79
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 78 downlink: 156 -> 157
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=158 (42 items) -> R=159 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 159 at parent 3 offset 80
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 79 downlink: 158 -> 159
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=160 (42 items) -> R=161 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 161 at parent 3 offset 81
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 80 downlink: 160 -> 161
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=162 (42 items) -> R=163 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 163 at parent 3 offset 82
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 81 downlink: 162 -> 163
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=164 (42 items) -> R=165 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 165 at parent 3 offset 83
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 82 downlink: 164 -> 165
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=166 (42 items) -> R=167 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 167 at parent 3 offset 84
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 83 downlink: 166 -> 167
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=168 (42 items) -> R=169 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 169 at parent 3 offset 85
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 84 downlink: 168 -> 169
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=170 (42 items) -> R=171 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 171 at parent 3 offset 86
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 85 downlink: 170 -> 171
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=172 (42 items) -> R=173 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 173 at parent 3 offset 87
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 86 downlink: 172 -> 173
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=174 (42 items) -> R=175 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 175 at parent 3 offset 88
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 87 downlink: 174 -> 175
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=176 (42 items) -> R=177 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 177 at parent 3 offset 89
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 88 downlink: 176 -> 177
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=178 (42 items) -> R=179 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 179 at parent 3 offset 90
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 89 downlink: 178 -> 179
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=180 (42 items) -> R=181 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 181 at parent 3 offset 91
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 90 downlink: 180 -> 181
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=182 (42 items) -> R=183 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 183 at parent 3 offset 92
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 91 downlink: 182 -> 183
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=184 (42 items) -> R=185 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 185 at parent 3 offset 93
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 92 downlink: 184 -> 185
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=186 (42 items) -> R=187 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 187 at parent 3 offset 94
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 93 downlink: 186 -> 187
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=188 (42 items) -> R=189 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 189 at parent 3 offset 95
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 94 downlink: 188 -> 189
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=190 (42 items) -> R=191 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 191 at parent 3 offset 96
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 95 downlink: 190 -> 191
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=192 (42 items) -> R=193 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 193 at parent 3 offset 97
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 96 downlink: 192 -> 193
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=194 (42 items) -> R=195 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 195 at parent 3 offset 98
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 97 downlink: 194 -> 195
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=196 (42 items) -> R=197 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 197 at parent 3 offset 99
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 98 downlink: 196 -> 197
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=198 (42 items) -> R=199 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 199 at parent 3 offset 100
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 99 downlink: 198 -> 199
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=200 (42 items) -> R=201 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 201 at parent 3 offset 101
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 100 downlink: 200 -> 201
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=202 (42 items) -> R=203 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 203 at parent 3 offset 102
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 101 downlink: 202 -> 203
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=204 (42 items) -> R=205 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 205 at parent 3 offset 103
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 102 downlink: 204 -> 205
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=206 (42 items) -> R=207 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 207 at parent 3 offset 104
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 103 downlink: 206 -> 207
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=208 (42 items) -> R=209 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 209 at parent 3 offset 105
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 104 downlink: 208 -> 209
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=210 (42 items) -> R=211 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 211 at parent 3 offset 106
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 105 downlink: 210 -> 211
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=212 (42 items) -> R=213 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 213 at parent 3 offset 107
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 106 downlink: 212 -> 213
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=214 (42 items) -> R=215 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 215 at parent 3 offset 108
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 107 downlink: 214 -> 215
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=216 (42 items) -> R=217 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 217 at parent 3 offset 109
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 108 downlink: 216 -> 217
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=218 (42 items) -> R=219 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 219 at parent 3 offset 110
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 109 downlink: 218 -> 219
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=220 (42 items) -> R=221 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 221 at parent 3 offset 111
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 110 downlink: 220 -> 221
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=222 (42 items) -> R=223 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 223 at parent 3 offset 112
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 111 downlink: 222 -> 223
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=224 (42 items) -> R=225 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 225 at parent 3 offset 113
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 112 downlink: 224 -> 225
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=226 (42 items) -> R=227 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 227 at parent 3 offset 114
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 113 downlink: 226 -> 227
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=228 (42 items) -> R=229 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 229 at parent 3 offset 115
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 114 downlink: 228 -> 229
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=230 (42 items) -> R=231 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 231 at parent 3 offset 116
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 115 downlink: 230 -> 231
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=232 (42 items) -> R=233 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 233 at parent 3 offset 117
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 116 downlink: 232 -> 233
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  Merging pages: L=234 (42 items) -> R=235 (42 items)
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Deleted redundant downlink to 235 at parent 3 offset 118
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Updated parent 3 offset 117 downlink: 234 -> 235
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  LOG: Merge scan completed. visited=118 merged=117
+psql:contrib/pg_btree_merge/sql/test_merge.sql:34: NOTICE:  === pg_btree_merge_pages: COMPLETE - merged 117 page pairs ===
+ pg_btree_merge_pages 
+----------------------
+ 
+(1 row)
+
+ size_after_merge 
+------------------
+ 1896 kB
+(1 row)
+
+ bt_index_check 
+----------------
+ 
+(1 row)
+
+SET
+ hidden_or_corrupted_records 
+-----------------------------
+                           0
+(1 row)
+
+RESET
+SET
+ fwd_count | bwd_count | scans_match 
+-----------+-----------+-------------
+      1000 |      1000 | t
+(1 row)
+
+RESET
+COMMIT
+ count 
+-------
+  1000
+(1 row)
+
+ min | max  
+-----+------
+   9 | 9999
+(1 row)
+
+ count 
+-------
+  1000
+(1 row)
+
+VACUUM
+ size_after_vacuum 
+-------------------
+ 1896 kB
+(1 row)
+
+ bt_index_parent_check 
+-----------------------
+ 
+(1 row)
+
+SET
+SET
+SET
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
+ Index Only Scan using idx_test_bloat on test_bloat (actual time=0.010..1.547 rows=1000.00 loops=1)
+   Heap Fetches: 0
+   Index Searches: 1
+   Buffers: shared hit=236
+ Planning:
+   Buffers: shared hit=4
+ Planning Time: 0.028 ms
+ Execution Time: 3.023 ms
+(8 rows)
+
+                                                 QUERY PLAN                                                  
+-------------------------------------------------------------------------------------------------------------
+ Index Only Scan Backward using idx_test_bloat on test_bloat (actual time=0.005..1.502 rows=1000.00 loops=1)
+   Heap Fetches: 0
+   Index Searches: 1
+   Buffers: shared hit=237
+ Planning Time: 0.019 ms
+ Execution Time: 2.903 ms
+(6 rows)
+
+RESET
+RESET
+RESET
+INSERT 0 3001
+ final_size 
+------------
+ 1896 kB
+(1 row)
+
+DROP TABLE
+DROP EXTENSION
+=== [6/6] Cleaning up ===
+waiting for server to shut down.... done
+server stopped
+Test complete. Server stopped.
